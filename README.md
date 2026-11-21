@@ -188,7 +188,7 @@ the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitH
 1. The update feed is configured for `DVVagram/rocket-lab` in `electron-builder.yml`
    (`publish.owner` / `publish.repo`); CI overrides it from the repository context. The app can be
    pointed at another repository at runtime with the `updateRepo` setting (`owner/repo`).
-2. Push a tag: `git tag v1.0.1 && git push origin v1.0.1`.
+2. Push a tag: `git tag v1.1.0 && git push origin v1.1.0`.
 3. Approve the draft release after the artifacts are attached.
 
 Signing secrets (all optional; unsigned builds install with OS warnings):
@@ -222,6 +222,11 @@ explicitly starts the download/install, and never touch user data.
   ground-test reports, was found by global search, and was included in backup counts. In the new
   ground-test form, choosing the matching category auto-selected the template and rendered its five
   fields; clearing the template was honoured rather than re-applied.
+- A second pass added eighteen IPC checks and fifteen UI checks for templates, runs, flights,
+  reports, backup contents and record creation. Two defects were found and fixed: promoting a
+  planned run to a completed status now re-runs required-field validation (previously the check ran
+  only when template values were also edited), and the global search dialog is now rendered only
+  when opened (it previously sat over the application as a blocking modal on every page).
 - The example workspace was verified with separate `ROCKETLAB_DATA_DIR` and example roots: it seeded
   one project, two datasets, four templates, one test, one flight and two runs on first open; its
   dataset series, analysis panels and project report rendered without errors; the user workspace
@@ -229,8 +234,12 @@ explicitly starts the download/install, and never touch user data.
   deleting the example workspace removed only its own folder before it reseeded on the next open.
 - The NSIS installer was installed silently, launched as a packaged application (`packaged: true`),
   and then upgraded from 1.0.0 to 1.0.1 in place: the project and all three datasets were still
-  present after the upgrade. Installers produced locally are unsigned unless signing credentials
-  are configured.
+  present after the upgrade. The 1.1.0 installer was installed, launched with an isolated data
+  folder, checked for templates, the example workspace and the search dialog, and uninstalled.
+  Installers produced locally are unsigned unless signing credentials are configured.
+
+Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
+`.AppImage`, `.deb` and `.dmg` assets are published from the tag build.
 
 ## 9. Safety scope
 

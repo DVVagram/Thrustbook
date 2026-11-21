@@ -109,6 +109,8 @@ function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => void })
     onClose();
   };
 
+  if (!open) return null;
+
   return (
     <Modal title="Search engineering records" onClose={onClose} size="lg">
       <div className="stack">

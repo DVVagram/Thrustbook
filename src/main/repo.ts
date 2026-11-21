@@ -300,7 +300,7 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
     params.push(next);
   }
   if (keys.length === 0) return getRecord(entity, id);
-  if (isTemplateEntity(entity) && (patch.template_id !== undefined || patch.custom_json !== undefined)) {
+  if (isTemplateEntity(entity) && (patch.template_id !== undefined || patch.custom_json !== undefined || patch.status !== undefined)) {
     const templateId = String(patch.template_id !== undefined ? patch.template_id || '' : existing.template_id || '');
     const values = patch.custom_json !== undefined ? patch.custom_json : parseCustomValues(existing.custom_json);
     assertTemplateValues(templateId, values, String(patch.status !== undefined ? patch.status : existing.status ?? ''));
