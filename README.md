@@ -204,7 +204,7 @@ the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitH
    default `updateRepo` to `DVVagram/Thrustbook`, and an empty value falls back to the same repository,
    so a fresh install does not need any feed entry. The app can be pointed at another repository at
    runtime with the `updateRepo` setting (`owner/repo`).
-2. Push a tag: `git tag v2.1.0 && git push origin v2.1.0`.
+2. Push a tag: `git tag v2.1.1 && git push origin v2.1.1`.
 3. Approve the draft release after the artifacts are attached.
 
 Signing secrets (all optional; unsigned builds install with OS warnings):
@@ -269,6 +269,10 @@ explicitly starts the download/install, and never touch user data.
 - The 2.1.0 Windows package was installed with a fresh data folder: it reported version 2.1.0,
   migrated the database to v4, showed Inventory and Finance in the sidebar, and defaulted the release
   feed to `DVVagram/Thrustbook` without any manual entry.
+- The 2.1.1 interface audit checked all 19 pages at 1120, 1280 and 1440px, plus populated inventory
+  and finance tables, project cards with active and archived states, every Settings tab and the main
+  tabbed pages. Project action buttons now use full labels instead of fixed-width icon buttons, so
+  Export, Archive/Restore and Delete no longer overlap. No other clipping or control overlap was found.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.

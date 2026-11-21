@@ -151,15 +151,15 @@ export default function ProjectsPage() {
                   <div className="project-card-foot">
                     <span className="muted small">Created {fmtDate(project.created_at)} · updated {relativeTime(project.updated_at)}</span>
                     <div className="row-actions">
-                      <button className="icon-btn" title="Export project" onClick={() => api.exportProject(project.id).then((r) => !r.canceled && notify(`Exported ${r.counts.datasets ?? 0} datasets`, 'success')).catch((e) => notify(e.message, 'error'))}>
-                        <span className="tiny">Export</span>
-                      </button>
-                      <button className="icon-btn" title={project.archived ? 'Restore' : 'Archive'} onClick={() => archive(project)}>
-                        <span className="tiny">{project.archived ? 'Restore' : 'Archive'}</span>
-                      </button>
-                      <button className="icon-btn danger" title="Delete project" onClick={() => remove(project)}>
-                        <span className="tiny">Delete</span>
-                      </button>
+                      <Button size="sm" variant="subtle" icon="download" title="Export project" onClick={() => api.exportProject(project.id).then((r) => !r.canceled && notify(`Exported ${r.counts.datasets ?? 0} datasets`, 'success')).catch((e) => notify(e.message, 'error'))}>
+                        Export
+                      </Button>
+                      <Button size="sm" variant="subtle" icon={project.archived ? 'refresh' : 'box'} title={project.archived ? 'Restore' : 'Archive'} onClick={() => archive(project)}>
+                        {project.archived ? 'Restore' : 'Archive'}
+                      </Button>
+                      <Button size="sm" variant="danger" icon="trash" title="Delete project" onClick={() => remove(project)}>
+                        Delete
+                      </Button>
                     </div>
                   </div>
                 </div>
