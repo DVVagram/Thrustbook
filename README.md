@@ -172,6 +172,8 @@ npm install
 npm run dev        # Vite dev server + Electron with hot reload
 npm run typecheck  # TypeScript, no emit
 npm run build      # esbuild main/preload + Vite renderer -> dist/
+npm run check:layout  # launch an isolated app and check all main pages at 1120px
+npm run check      # typecheck + build + layout check
 npm start          # build, then launch the packaged runtime locally
 ```
 
@@ -273,6 +275,11 @@ explicitly starts the download/install, and never touch user data.
   and finance tables, project cards with active and archived states, every Settings tab and the main
   tabbed pages. Project action buttons now use full labels instead of fixed-width icon buttons, so
   Export, Archive/Restore and Delete no longer overlap. No other clipping or control overlap was found.
+- `npm run check` now runs that layout guard automatically after typecheck and build. It launches
+  Electron with an isolated profile and the example workspace, walks all 19 main pages at the 1120px
+  minimum width, and fails on button text that escapes its control or visible controls that overlap.
+  The detector was verified against the original defect by injecting the old 24px Export button: the
+  check failed with `projects: button text overflow`; the current UI passes all pages.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.
