@@ -191,7 +191,7 @@ credentials the DMG is unsigned and Gatekeeper will warn.
 `.github/workflows/release.yml` builds all three platforms on a version tag (`v1.2.3`) and publishes
 the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
 
-1. The update feed is configured for `DVVagram/thrustbook` in `electron-builder.yml`
+1. The update feed is configured for `DVVagram/Thrustbook` in `electron-builder.yml`
    (`publish.owner` / `publish.repo`); CI overrides it from the repository context. The app can be
    pointed at another repository at runtime with the `updateRepo` setting (`owner/repo`).
 2. Push a tag: `git tag v2.0.0 && git push origin v2.0.0`.

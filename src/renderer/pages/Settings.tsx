@@ -601,7 +601,7 @@ export default function SettingsPage() {
           <Panel title="Release feed configuration">
             <div className="stack">
               <Field label="GitHub repository" hint="owner/repository used for release checks">
-                <Input value={repoDraft} onChange={(e) => setRepoDraft(e.target.value)} placeholder="my-org/thrustbook" />
+                <Input value={repoDraft} onChange={(e) => setRepoDraft(e.target.value)} placeholder="my-org/Thrustbook" />
               </Field>
               <div className="modal-actions-row">
                 <Button
