@@ -10,6 +10,21 @@ function pad(n: number): string {
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
+  // Date-only values (ledger dates, stage dates) must not shift through UTC parsing.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  if (dateOnly) {
+    const [year, month, day] = [Number(dateOnly[1]), Number(dateOnly[2]), Number(dateOnly[3])];
+    switch (prefs.dateFormat) {
+      case 'DD/MM/YYYY':
+        return `${pad(day)}/${pad(month)}/${year}`;
+      case 'MM/DD/YYYY':
+        return `${pad(month)}/${pad(day)}/${year}`;
+      case 'DD-MMM-YYYY':
+        return `${pad(day)}-${new Date(year, month - 1, day).toLocaleString('en-US', { month: 'short' })}-${year}`;
+      default:
+        return `${year}-${pad(month)}-${pad(day)}`;
+    }
+  }
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
   const y = d.getFullYear();
@@ -86,6 +101,22 @@ export function fromLocalInput(value: string): string {
   if (!value) return '';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
+export function money(value: number | null | undefined, currency = 'USD'): string {
+  const amount = Number(value ?? 0);
+  const code = String(currency || 'USD').toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number.isFinite(amount) ? amount : 0);
+  } catch {
+    return `${code} ${(Number.isFinite(amount) ? amount : 0).toFixed(2)}`;
+  }
+}
+
+export function quantity(value: number | null | undefined): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
 export function bytes(size: number | null | undefined): string {

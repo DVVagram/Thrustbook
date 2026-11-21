@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { getDb, type Db } from './db';
 import { ENTITY_LABELS } from '../shared/constants';
 import { isTemplateEntity, normalizeTemplateFields, validateTemplateValues } from '../shared/templates';
+import { normalizeCurrency, validateFinanceEntry, validateInventoryItem } from '../shared/operations';
 
 export const TABLES: Record<string, string> = {
   project: 'projects',
@@ -32,6 +33,8 @@ export const TABLES: Record<string, string> = {
   comparison: 'comparisons',
   import_template: 'import_templates',
   entry_template: 'entry_templates',
+  inventory_item: 'inventory_items',
+  finance_entry: 'finance_entries',
   report: 'reports',
   activity: 'activity',
 };
@@ -98,6 +101,32 @@ function coerceValue(value: any): any {
 }
 
 const TEMPLATE_FINAL_STATUSES = ['Completed', 'Complete', 'Failed', 'Aborted', 'Verified', 'Closed', 'Archived'];
+const OPERATIONAL_ENTITIES = new Set(['inventory_item', 'finance_entry']);
+
+/** Coerces the operational numeric/currency fields before validation and storage. */
+function normalizeOperationalInput(entity: string, data: Record<string, any>): Record<string, any> {
+  const next = { ...data };
+  if (entity === 'inventory_item') {
+    for (const key of ['quantity', 'unit_cost', 'reorder_level']) {
+      if (next[key] !== undefined && next[key] !== null && next[key] !== '') next[key] = Number(next[key]);
+    }
+    if (next.currency !== undefined) next.currency = normalizeCurrency(next.currency);
+    if (next.unit !== undefined) next.unit = String(next.unit ?? '').trim() || 'pcs';
+  }
+  if (entity === 'finance_entry') {
+    if (next.amount !== undefined && next.amount !== null && next.amount !== '') next.amount = Number(next.amount);
+    if (next.currency !== undefined) next.currency = normalizeCurrency(next.currency);
+    if (next.kind !== undefined) next.kind = String(next.kind ?? '').toLowerCase();
+    if (next.occurred_on !== undefined) next.occurred_on = String(next.occurred_on ?? '').slice(0, 10);
+  }
+  return next;
+}
+
+function assertOperationalRecord(entity: string, row: Record<string, any>): void {
+  if (!OPERATIONAL_ENTITIES.has(entity)) return;
+  const errors = entity === 'inventory_item' ? validateInventoryItem(row) : validateFinanceEntry(row);
+  if (errors.length) throw new Error(errors.join('; '));
+}
 
 function parseCustomValues(value: any): Record<string, any> {
   if (!value) return {};
@@ -189,7 +218,7 @@ export function findOne(entity: string, where: Record<string, any>): any | undef
   return expandOne(getDb().get(sql, keys.map((k) => where[k])));
 }
 
-const DISPLAY_FIELD = ['name', 'title', 'label'];
+const DISPLAY_FIELD = ['name', 'title', 'label', 'description'];
 
 function displayName(entity: string, row: any): string {
   for (const f of DISPLAY_FIELD) if (row?.[f]) return String(row[f]);
@@ -235,20 +264,39 @@ export function createRecord(entity: string, data: Record<string, any>): any {
   const table = tableFor(entity);
   const cols = columnsFor(table);
   const db = getDb();
-  const id = typeof data.id === 'string' && data.id ? data.id : newId();
+  const input = normalizeOperationalInput(entity, data);
+  const id = typeof input.id === 'string' && input.id ? input.id : newId();
   const ts = nowIso();
   const row: Record<string, any> = { id };
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(input)) {
     if (!cols.has(key)) continue;
     if (key === 'id') continue;
     row[key] = coerceValue(value);
   }
-  if (cols.has('created_at')) row.created_at = data.created_at ?? ts;
-  if (cols.has('updated_at')) row.updated_at = data.updated_at ?? ts;
+  if (cols.has('created_at')) row.created_at = input.created_at ?? ts;
+  if (cols.has('updated_at')) row.updated_at = input.updated_at ?? ts;
+
+  if (entity === 'inventory_item' && !String(row.name ?? '').trim()) throw new Error('Item name is required');
+  if (entity === 'inventory_item') {
+    if (input.quantity === undefined || input.quantity === null || input.quantity === '') throw new Error('Quantity is required');
+    if (input.unit_cost === undefined || input.unit_cost === null || input.unit_cost === '') throw new Error('Unit cost is required');
+    if (row.quantity === undefined || row.quantity === null) row.quantity = 0;
+    if (!row.unit) row.unit = 'pcs';
+    if (row.unit_cost === undefined || row.unit_cost === null) row.unit_cost = 0;
+    if (row.reorder_level === undefined || row.reorder_level === null) row.reorder_level = 0;
+    if (!row.currency) row.currency = 'USD';
+  }
+  if (entity === 'finance_entry') {
+    if (!row.kind) row.kind = 'expenditure';
+    if (!row.occurred_on) row.occurred_on = ts.slice(0, 10);
+    if (row.amount === undefined || row.amount === null) row.amount = 0;
+    if (!row.currency) row.currency = 'USD';
+  }
+  assertOperationalRecord(entity, row);
 
   if (cols.has('name') && !row.name) {
     if (entity === 'project') throw new Error('Project name is required');
-    if (entity !== 'setting') row.name = data.title ?? data.label ?? `${ENTITY_LABELS[entity] ?? 'Record'}`;
+    if (entity !== 'setting') row.name = input.title ?? input.label ?? `${ENTITY_LABELS[entity] ?? 'Record'}`;
   }
 
   if (isTemplateEntity(entity) && row.template_id) {
@@ -287,11 +335,12 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
   const db = getDb();
   const existing = db.get<any>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
   if (!existing) throw new Error(`${ENTITY_LABELS[entity] ?? entity} not found`);
+  const input = normalizeOperationalInput(entity, patch);
 
   const keys: string[] = [];
   const params: any[] = [];
   const changed: string[] = [];
-  for (const [key, value] of Object.entries(patch)) {
+  for (const [key, value] of Object.entries(input)) {
     if (!cols.has(key) || key === 'id' || key === 'created_at') continue;
     if (key === 'updated_at') continue;
     const next = coerceValue(value);
@@ -300,6 +349,7 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
     params.push(next);
   }
   if (keys.length === 0) return getRecord(entity, id);
+  if (OPERATIONAL_ENTITIES.has(entity)) assertOperationalRecord(entity, { ...existing, ...input });
   if (isTemplateEntity(entity) && (patch.template_id !== undefined || patch.custom_json !== undefined || patch.status !== undefined)) {
     const templateId = String(patch.template_id !== undefined ? patch.template_id || '' : existing.template_id || '');
     const values = patch.custom_json !== undefined ? patch.custom_json : parseCustomValues(existing.custom_json);
@@ -322,7 +372,7 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
         entity_id: id,
         kind: 'update',
         title: `${ENTITY_LABELS[entity] ?? entity} updated`,
-        detail: changed.length ? `Changed: ${meaningful.slice(0, 12).join(', ')}` : displayName(entity, patch),
+        detail: changed.length ? `Changed: ${meaningful.slice(0, 12).join(', ')}` : displayName(entity, input),
       },
       db,
     );
@@ -368,6 +418,8 @@ export function removeRecord(entity: string, id: string): RemoveResult {
       { table: 'workspaces', column: 'project_id' },
       { table: 'comparisons', column: 'project_id' },
       { table: 'entry_templates', column: 'project_id' },
+      { table: 'inventory_items', column: 'project_id' },
+      { table: 'finance_entries', column: 'project_id' },
       { table: 'reports', column: 'project_id' },
       { table: 'activity', column: 'project_id' },
     ],
@@ -553,7 +605,7 @@ export function searchGlobal(term: string, projectId?: string): SearchHit[] {
       subtitle,
       project_id: row.project_id ?? (type === 'project' ? row.id : ''),
       project_name: projectName || row.project_name || '',
-      at: row.performed_at || row.recorded_at || row.updated_at || row.created_at || '',
+      at: row.performed_at || row.recorded_at || row.occurred_on || row.updated_at || row.created_at || '',
       route,
     });
   };
@@ -621,6 +673,31 @@ export function searchGlobal(term: string, projectId?: string): SearchHit[] {
     (r) => push('entry_template', r, r.name, `Entry template · ${r.applies_to}`, `#/templates?template=${r.id}`, ''),
   );
 
+  db.all<any>(
+    `SELECT i.*, p.name AS project_name FROM inventory_items i LEFT JOIN projects p ON p.id = i.project_id
+     WHERE (i.name LIKE ? OR i.sku LIKE ? OR i.supplier LIKE ? OR i.location LIKE ? OR i.notes LIKE ?)${projectId ? ' AND i.project_id = ?' : ''}
+     ORDER BY i.updated_at DESC LIMIT 30`,
+    [like, like, like, like, like, ...p],
+  ).forEach((r) =>
+    push('inventory_item', r, r.name, `${r.quantity} ${r.unit || 'pcs'} · inventory`, `#/inventory?item=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(
+    `SELECT f.*, p.name AS project_name FROM finance_entries f LEFT JOIN projects p ON p.id = f.project_id
+     WHERE (f.description LIKE ? OR f.counterparty LIKE ? OR f.reference LIKE ? OR f.category LIKE ? OR f.notes LIKE ?)${projectId ? ' AND f.project_id = ?' : ''}
+     ORDER BY f.occurred_on DESC LIMIT 30`,
+    [like, like, like, like, like, ...p],
+  ).forEach((r) =>
+    push(
+      'finance_entry',
+      r,
+      r.description,
+      `${r.kind === 'income' ? 'Income' : 'Expenditure'} · ${r.currency} ${Number(r.amount).toFixed(2)}`,
+      `#/finance?entry=${r.id}`,
+      r.project_name,
+    ),
+  );
+
   const seen = new Set<string>();
   return hits
     .filter((h) => {
@@ -657,6 +734,8 @@ export function projectOverview(projectId: string): any {
   const sensors = db.all<any>('SELECT * FROM sensors WHERE project_id = ? ORDER BY name', [projectId]);
   const reports = db.all<any>('SELECT * FROM reports WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
   const configs = db.all<any>('SELECT * FROM electronics_configs WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const inventory = db.all<any>('SELECT * FROM inventory_items WHERE project_id = ? ORDER BY category, name', [projectId]);
+  const finance = db.all<any>('SELECT * FROM finance_entries WHERE project_id = ? ORDER BY occurred_on DESC, created_at DESC', [projectId]);
 
   return {
     project: expandOne(project),
@@ -676,6 +755,8 @@ export function projectOverview(projectId: string): any {
     sensors,
     reports,
     configs,
+    inventory,
+    finance,
     counts: {
       rockets: rockets.length,
       revisions: revisions.length,
@@ -688,6 +769,8 @@ export function projectOverview(projectId: string): any {
       sensors: sensors.length,
       documents: documents.length,
       reports: reports.length,
+      inventoryItems: inventory.length,
+      financeEntries: finance.length,
     },
   };
 }

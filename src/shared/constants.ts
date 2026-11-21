@@ -114,6 +114,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   report: 'Report',
   event: 'Event marker',
   entry_template: 'Entry template',
+  inventory_item: 'Inventory item',
+  finance_entry: 'Finance entry',
 };
 
 export const NAV_ITEMS: { key: string; label: string; group: string; icon: string }[] = [
@@ -123,6 +125,8 @@ export const NAV_ITEMS: { key: string; label: string; group: string; icon: strin
   { key: 'components', label: 'Components & Electronics', group: 'Development', icon: 'chip' },
   { key: 'sensors', label: 'Sensors', group: 'Development', icon: 'sensor' },
   { key: 'revisions', label: 'Revision History', group: 'Development', icon: 'branch' },
+  { key: 'inventory', label: 'Inventory', group: 'Operations', icon: 'box' },
+  { key: 'finance', label: 'Finance', group: 'Operations', icon: 'wallet' },
   { key: 'ground', label: 'Ground Testing', group: 'Testing', icon: 'beaker' },
   { key: 'flights', label: 'Flight Testing', group: 'Testing', icon: 'flight' },
   { key: 'experiments', label: 'Experimental Testing', group: 'Testing', icon: 'flask' },

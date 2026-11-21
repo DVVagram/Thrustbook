@@ -19,7 +19,9 @@ Supported targets: Windows 10/11 x64 (NSIS `.exe`), Linux x64 (AppImage and `.de
 | Dashboard | Programme state: active projects, recent activity, upcoming tests, unresolved issues, recent datasets, milestones; configurable widgets |
 | Projects | Multiple projects, rockets, campaigns, objectives, status, activity history, archived projects |
 | Rocket Development | Configurable development stages with notes, measurements, files, linked components/tests/datasets/issues, timeline |
-| Components & Electronics | Component inventory, electronics configurations, installation and test history, substitution history |
+| Components & Electronics | Component catalog, electronics configurations, installation and test history, substitution history |
+| Inventory | Costed stock of parts, materials, consumables and tools with quantities, units, unit costs, suppliers, locations, reorder levels and calculated stock value |
+| Finance | Project income and expenditure ledger with dates, categories, counterparties, references, payment methods and per-currency net balances |
 | Sensors | Sensor database, calibration records, installation history, measurement history |
 | Revision History | Revision records, revision-to-revision comparison, configuration comparison |
 | Ground Testing | Test records with configuration, environment, expected/actual results, custom fields, attached datasets |
@@ -93,6 +95,12 @@ src/
   migration that changes structure.
 - Application updates replace only the installation. User data lives in the OS user-data folder and
   is untouched by installers and updates.
+- Inventory value is derived, never stored: quantity on hand × unit cost, calculated per item and
+  totalled separately for each recorded currency. A low-stock flag is shown only when a reorder level
+  above zero is configured. Stock changes do not post a finance entry automatically.
+- Finance entries record a positive amount and an explicit type. Income adds to and expenditure
+  subtracts from the net balance; the net is calculated and labelled as derived. Amounts in different
+  currencies are never converted or combined into one total.
 
 ## 4. Local data layout
 
@@ -214,7 +222,7 @@ explicitly starts the download/install, and never touch user data.
 ## 8. Verification performed
 
 - `npm run typecheck` clean; `npm run build` produces `dist/main`, `dist/preload`, `dist/renderer`.
-- The built application launches, creates/migrates the SQLite schema (v3) and renders the shell and
+- The built application launches, creates/migrates the SQLite schema (v4) and renders the shell and
   all module pages without console errors.
 - An end-to-end run through the real IPC layer created a project, rocket, revision, ground test and
   flight; imported two CSVs (100 Hz, 200 Hz) with different durations and units; produced channel
@@ -247,6 +255,15 @@ explicitly starts the download/install, and never touch user data.
   project, test and imported dataset: the profile was copied to `%APPDATA%/Thrustbook`, the dataset
   and original-file paths were rewritten, the channel series still returned its samples, the legacy
   folder remained untouched, and the renamed window, installer and report strings showed Thrustbook.
+- Costed inventory and the income/expenditure ledger were exercised through the IPC layer and the UI
+  with USD and EUR rows: quantities and unit costs were persisted, stock values were recalculated on
+  edit, low-stock thresholds and filters worked, income/expenditure/net totals stayed separate by
+  currency, the type tabs filtered correctly, and create, delete, global search, backups, project
+  overview counts and project-deletion cascades all included the new records. Required names,
+  quantities, costs, descriptions, amounts, types and dates were rejected when invalid. Two defects
+  were found during this pass and fixed: a missing unit cost previously defaulted to zero, an
+  impossible date such as `2026-02-31` was previously accepted by JavaScript date normalisation, and
+  date-only ledger values could display a day earlier in some timezones.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.

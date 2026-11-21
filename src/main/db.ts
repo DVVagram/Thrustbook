@@ -532,6 +532,49 @@ ALTER TABLE runs ADD COLUMN custom_json TEXT DEFAULT '{}';
 ALTER TABLE runs ADD COLUMN template_id TEXT DEFAULT '';
 `,
   },
+  {
+    version: 4,
+    name: 'costed inventory and income/expenditure ledger',
+    sql: `
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT DEFAULT 'Other',
+  sku TEXT DEFAULT '',
+  quantity REAL DEFAULT 0,
+  unit TEXT DEFAULT 'pcs',
+  unit_cost REAL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  supplier TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  reorder_level REAL DEFAULT 0,
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS finance_entries (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  kind TEXT DEFAULT 'expenditure',
+  occurred_on TEXT DEFAULT '',
+  description TEXT NOT NULL,
+  category TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  counterparty TEXT DEFAULT '',
+  reference TEXT DEFAULT '',
+  payment_method TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_project ON inventory_items(project_id, name);
+CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory_items(project_id, category);
+CREATE INDEX IF NOT EXISTS idx_finance_project ON finance_entries(project_id, occurred_on DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_kind ON finance_entries(project_id, kind, occurred_on DESC);
+`,
+  },
 ];
 
 export interface Db {

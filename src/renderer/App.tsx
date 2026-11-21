@@ -24,6 +24,8 @@ import IssuesPage from './pages/Issues';
 import ReportsPage from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import TemplatesPage from './pages/Templates';
+import InventoryPage from './pages/Inventory';
+import FinancePage from './pages/Finance';
 
 const PAGE_ROUTES: Record<string, { nav: string; render: () => React.ReactNode }> = {
   dashboard: { nav: 'dashboard', render: () => <Dashboard /> },
@@ -40,6 +42,8 @@ const PAGE_ROUTES: Record<string, { nav: string; render: () => React.ReactNode }
   sensors: { nav: 'sensors', render: () => <SensorsPage /> },
   revisions: { nav: 'revisions', render: () => <RevisionsPage /> },
   revision: { nav: 'revisions', render: () => <RevisionDetailPage /> },
+  inventory: { nav: 'inventory', render: () => <InventoryPage /> },
+  finance: { nav: 'finance', render: () => <FinancePage /> },
   documents: { nav: 'documents', render: () => <DocumentsPage /> },
   issues: { nav: 'issues', render: () => <IssuesPage /> },
   reports: { nav: 'reports', render: () => <ReportsPage /> },
@@ -54,6 +58,8 @@ const NAV_PATHS: Record<string, string> = {
   components: '#/components',
   sensors: '#/sensors',
   revisions: '#/revisions',
+  inventory: '#/inventory',
+  finance: '#/finance',
   ground: '#/ground',
   flights: '#/flights',
   experiments: '#/experiments',

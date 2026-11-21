@@ -233,7 +233,21 @@ export async function createBackup(label = '', kind: BackupInfo['kind'] = 'manua
   const file = path.join(backupsDir(), name);
 
   const counts: Record<string, number> = {};
-  for (const table of ['projects', 'revisions', 'tests', 'flights', 'datasets', 'channels', 'documents', 'issues', 'components', 'sensors', 'entry_templates']) {
+  for (const table of [
+    'projects',
+    'revisions',
+    'tests',
+    'flights',
+    'datasets',
+    'channels',
+    'documents',
+    'issues',
+    'components',
+    'sensors',
+    'entry_templates',
+    'inventory_items',
+    'finance_entries',
+  ]) {
     try {
       counts[table] = Number((db.get<any>(`SELECT COUNT(*) AS c FROM ${table}`) as any)?.c ?? 0);
     } catch {
@@ -478,6 +492,8 @@ function projectTableRows(projectId: string): Record<string, any[]> {
     'workspaces',
     'comparisons',
     'entry_templates',
+    'inventory_items',
+    'finance_entries',
     'reports',
     'activity',
   ];
@@ -684,6 +700,8 @@ export async function importProject(archivePath: string, options: { rename?: str
       insertRows('workspaces', tables.workspaces ?? []);
       insertRows('comparisons', tables.comparisons ?? []);
       insertRows('entry_templates', tables.entry_templates ?? []);
+      insertRows('inventory_items', tables.inventory_items ?? []);
+      insertRows('finance_entries', tables.finance_entries ?? []);
       insertRows('reports', tables.reports ?? []);
       insertRows('activity', tables.activity ?? []);
       db.run(
@@ -739,6 +757,8 @@ export function storageInfo(): any {
       channels: Number(db.get<any>('SELECT COUNT(*) c FROM channels')?.c ?? 0),
       documents: Number(db.get<any>('SELECT COUNT(*) c FROM documents')?.c ?? 0),
       reports: Number(db.get<any>('SELECT COUNT(*) c FROM reports')?.c ?? 0),
+      inventoryItems: Number(db.get<any>('SELECT COUNT(*) c FROM inventory_items')?.c ?? 0),
+      financeEntries: Number(db.get<any>('SELECT COUNT(*) c FROM finance_entries')?.c ?? 0),
     },
   };
 }
@@ -775,6 +795,8 @@ export function integrityCheck(): any {
     ['flights', 'project_id NOT IN (SELECT id FROM projects)'],
     ['documents', 'project_id NOT IN (SELECT id FROM projects)'],
     ['events', 'dataset_id NOT IN (SELECT id FROM datasets)'],
+    ['inventory_items', 'project_id NOT IN (SELECT id FROM projects)'],
+    ['finance_entries', 'project_id NOT IN (SELECT id FROM projects)'],
   ];
   for (const [table, condition] of orphanChecks) {
     const count = Number(db.get<any>(`SELECT COUNT(*) c FROM ${table} WHERE ${condition}`)?.c ?? 0);
@@ -808,7 +830,22 @@ export function removeBackup(file: string): { ok: boolean } {
 
 export function exportTableCsv(table: string, destination: string): string {
   const db = getDb();
-  const allowed = new Set(['projects', 'tests', 'flights', 'datasets', 'channels', 'components', 'sensors', 'calibrations', 'issues', 'documents', 'reports', 'activity']);
+  const allowed = new Set([
+    'projects',
+    'tests',
+    'flights',
+    'datasets',
+    'channels',
+    'components',
+    'sensors',
+    'calibrations',
+    'issues',
+    'documents',
+    'reports',
+    'activity',
+    'inventory_items',
+    'finance_entries',
+  ]);
   if (!allowed.has(table)) throw new Error('Table export is not available for this record type');
   const rows = db.all<any>(`SELECT * FROM ${table} LIMIT 200000`);
   if (rows.length === 0) {

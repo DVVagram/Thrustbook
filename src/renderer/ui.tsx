@@ -40,6 +40,8 @@ const ICON_PATHS: Record<string, string> = {
   print: 'M6 9V3h12v6M6 17H4v-7h16v7h-2M7 14h10v7H7z',
   panel: 'M3 4h18v16H3zM9 4v16M15 4v16',
   link: 'M10 13a4 4 0 0 0 6 .5l2-2a4 4 0 0 0-5.7-5.7L11 7M14 11a4 4 0 0 0-6-.5l-2 2A4 4 0 0 0 11.7 18L13 17',
+  box: 'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
+  wallet: 'M3 7a2 2 0 0 1 2-2h12v4M3 7v10a2 2 0 0 0 2 2h14V9H5a2 2 0 0 1-2-2zM16 13h2',
 };
 
 export function Icon({ name, size = 16, className = '' }: { name: string; size?: number; className?: string }) {

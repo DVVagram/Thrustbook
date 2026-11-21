@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { allSettings, getDb, setSetting } from './db';
+import { allSettings, getDb, schemaVersion, setSetting } from './db';
 import {
   createRecord,
   dashboard,
@@ -219,6 +219,7 @@ const handlers: Record<string, Handler> = {
     node: process.versions.node,
     chrome: process.versions.chrome,
     dataDir: dataDir(),
+    schemaVersion: schemaVersion(),
     workspaceMode: workspaceMode(),
     examplesWorkspace: workspaceMode() === 'examples',
     examplesDir: examplesRoot(),

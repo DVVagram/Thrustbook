@@ -12,6 +12,9 @@ import {
   TEST_CATEGORIES,
   TEST_STATUSES,
 } from '../shared/constants';
+import { CURRENCIES, FINANCE_CATEGORIES, FINANCE_KINDS, INVENTORY_CATEGORIES, PAYMENT_METHODS } from '../shared/operations';
+
+const currencyOptions = CURRENCIES.map((currency) => ({ value: currency, label: currency }));
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'select' | 'datetime' | 'date' | 'checkbox';
 
@@ -185,6 +188,39 @@ export const FORMS: Record<string, { title: string; singular: string; fields: Fi
       { key: 'specs', label: 'Technical specifications', type: 'textarea', full: true, rows: 3 },
       { key: 'configuration', label: 'Current configuration', type: 'textarea', full: true, rows: 2 },
       { key: 'purchase_info', label: 'Purchase information', type: 'textarea', full: true, rows: 2 },
+      { key: 'notes', label: 'Notes', type: 'textarea', full: true, rows: 3 },
+    ],
+  },
+  inventory_item: {
+    title: 'Inventory item',
+    singular: 'inventory item',
+    fields: [
+      { key: 'name', label: 'Item name', required: true, placeholder: 'e.g. 6-cell Li-ion pack' },
+      { key: 'category', label: 'Category', type: 'select', options: opts(INVENTORY_CATEGORIES) },
+      { key: 'sku', label: 'SKU / part number', mono: true },
+      { key: 'quantity', label: 'Quantity on hand', type: 'number', required: true, step: 'any', hint: 'Count, length, mass or volume in the unit below' },
+      { key: 'unit', label: 'Unit', placeholder: 'pcs, m, kg, L…' },
+      { key: 'unit_cost', label: 'Unit cost', type: 'number', required: true, step: '0.01', hint: 'Cost per single unit, in the selected currency' },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions },
+      { key: 'supplier', label: 'Supplier' },
+      { key: 'location', label: 'Storage location', placeholder: 'e.g. Shelf B2, avionics box' },
+      { key: 'reorder_level', label: 'Reorder level', type: 'number', step: 'any', hint: 'Show a low-stock warning at or below this quantity; 0 disables it' },
+      { key: 'notes', label: 'Notes', type: 'textarea', full: true, rows: 3 },
+    ],
+  },
+  finance_entry: {
+    title: 'Finance entry',
+    singular: 'finance entry',
+    fields: [
+      { key: 'kind', label: 'Type', type: 'select', required: true, options: FINANCE_KINDS },
+      { key: 'occurred_on', label: 'Date', type: 'date', required: true },
+      { key: 'description', label: 'Description', required: true, full: true, placeholder: 'e.g. Static fire propellant and consumables' },
+      { key: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', hint: 'Always positive; the type determines whether it adds or subtracts' },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions },
+      { key: 'category', label: 'Category', type: 'select', options: opts(FINANCE_CATEGORIES) },
+      { key: 'counterparty', label: 'Paid to / received from' },
+      { key: 'reference', label: 'Reference / invoice', mono: true },
+      { key: 'payment_method', label: 'Payment method', type: 'select', options: opts(PAYMENT_METHODS) },
       { key: 'notes', label: 'Notes', type: 'textarea', full: true, rows: 3 },
     ],
   },
