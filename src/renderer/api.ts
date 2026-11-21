@@ -15,6 +15,10 @@ export async function call<T = any>(method: string, payload: any = {}): Promise<
 
 export const api = {
   info: () => call('app.info'),
+  workspaceInfo: () => call<any>('workspace.info'),
+  switchWorkspace: (mode: 'user' | 'examples') => call<any>('workspace.switch', { mode }),
+  resetExamples: () => call<any>('workspace.resetExamples'),
+  deleteExamples: () => call<any>('workspace.deleteExamples'),
   settingsAll: () => call<Record<string, string>>('settings.all'),
   setSetting: (key: string, value: string) => call('settings.set', { key, value }),
 

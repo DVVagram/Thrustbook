@@ -31,7 +31,8 @@ Supported targets: Windows 10/11 x64 (NSIS `.exe`), Linux x64 (AppImage and `.de
 | Engineering Documentation | Document library with checksums, previews, tags and links to any record |
 | Issues & Observations | Issue lifecycle, severity, investigation and verification links |
 | Reports | Ten report kinds rendered to HTML and PDF, with recorded/derived content separated |
-| Settings | Theme, units, date formats, storage location, backups, imports, graph defaults, updates, diagnostics |
+| Entry Templates | Reusable, project-scoped or application-wide data-entry templates with typed custom fields for tests, flights and experimental runs |
+| Settings | Theme, units, date formats, storage location, backups, imports, graph defaults, updates, diagnostics, example workspace |
 
 Data is relational and traceable: a dataset belongs to a project and optionally to a ground test, a
 flight or an experimental run; tests and flights point at a rocket revision and an electronics
@@ -97,17 +98,52 @@ src/
 
 ```
 <userData>/storage.json            optional pointer to a relocated data folder
-<userData>/data/
+<userData>/workspace.json          which workspace opens: { "mode": "user" | "examples" }
+<userData>/data/                   the user's own workspace
   rocketlab.db                     metadata, schema version in PRAGMA user_version
   datasets/<datasetId>/            original.<ext>, time.f64, ch_00.f64 …
   documents/                       uploaded attachments (original retained)
   reports/                         generated HTML + PDF
   backups/                         versioned .rlbak archives
   deleted/                         archived dataset folders
+<userData>/examples/               the example workspace (separate database and folders)
+  seed.json                        seed version marker
+  data/                            same layout as above, never mixed with user data
 ```
 
 The storage folder can be shown, backed up, restored or moved from **Settings → Data**.
-`ROCKETLAB_DATA_DIR` overrides the location for portable or QA runs.
+`ROCKETLAB_DATA_DIR` overrides the location for portable or QA runs; `ROCKETLAB_WORKSPACE`
+(`user` or `examples`) and `ROCKETLAB_EXAMPLES_ROOT` override workspace selection for QA.
+
+### Entry templates
+
+**Entry Templates** (System) defines reusable field sheets per record type — ground test, flight
+test or experimental run — optionally narrowed to a test category and either project-scoped or
+available to every project. Field types are text, number, measurement (with unit), yes/no, date,
+select and long text; each field can carry a default, help text and a “required” flag.
+
+A template chosen on a record copies its fields as defaults into the record's own `custom_json`.
+Values are stored with that record and never change when the template is later edited, so
+historical entries stay intact. Required fields are enforced when a record is marked final
+(Completed, Complete, Failed, Aborted, Verified, Closed or Archived); planned records can be
+created before their measurements exist. Select and numeric values are validated on every write,
+and template values appear in the ground-test and flight-test reports under a clearly labelled
+user-entered section.
+
+### Example workspace
+
+The bundled example programme (project “Kestrel-1 — example programme”, with revisions, stages,
+components, sensors, calibration, tests, flight, experiment runs, templates, datasets and events)
+lives in its own database and folder tree under `<userData>/examples`. It is created through the
+same import pipeline as real recordings, so it exercises the real analysis code rather than a
+mock layer.
+
+The workspace is selected before the database opens; **Open example data** / **Return to my data**
+(in the sidebar or Settings → Data & storage) restarts the application into the chosen workspace.
+Because the two workspaces never share a database or file tree, example records cannot appear in
+user searches, dashboards, backups, exports or reports, and user edits in the example workspace
+are never copied into user projects. The example workspace can be reset or deleted from the same
+panel, and automatic daily backups and storage relocation are disabled while it is active.
 
 Backups (`.rlbak`) and project exports (`.rlproj`) are streaming tar+gzip archives containing a
 manifest, the SQLite database (consistent copy) and the referenced dataset/document files. Project
@@ -172,7 +208,7 @@ explicitly starts the download/install, and never touch user data.
 ## 8. Verification performed
 
 - `npm run typecheck` clean; `npm run build` produces `dist/main`, `dist/preload`, `dist/renderer`.
-- The built application launches, creates/migrates the SQLite schema (v2) and renders the shell and
+- The built application launches, creates/migrates the SQLite schema (v3) and renders the shell and
   all module pages without console errors.
 - An end-to-end run through the real IPC layer created a project, rocket, revision, ground test and
   flight; imported two CSVs (100 Hz, 200 Hz) with different durations and units; produced channel
@@ -180,6 +216,17 @@ explicitly starts the download/install, and never touch user data.
   suggestions, a saved workspace, a saved comparison, a project report with PDF, a backup and an
   integrity check.
 - Every module route was loaded in the packaged renderer with no console errors.
+- Entry templates were exercised through the IPC layer and the UI: a template with required text,
+  measurement and select fields rejected invalid/missing final values, allowed a Planned record to
+  be created first, persisted and re-read its values, rejected non-numeric measurements, appeared in
+  ground-test reports, was found by global search, and was included in backup counts. In the new
+  ground-test form, choosing the matching category auto-selected the template and rendered its five
+  fields; clearing the template was honoured rather than re-applied.
+- The example workspace was verified with separate `ROCKETLAB_DATA_DIR` and example roots: it seeded
+  one project, two datasets, four templates, one test, one flight and two runs on first open; its
+  dataset series, analysis panels and project report rendered without errors; the user workspace
+  still contained only its own project and template, no example record was found by search, and
+  deleting the example workspace removed only its own folder before it reseeded on the next open.
 - The NSIS installer was installed silently, launched as a packaged application (`packaged: true`),
   and then upgraded from 1.0.0 to 1.0.1 in place: the project and all three datasets were still
   present after the upgrade. Installers produced locally are unsigned unless signing credentials

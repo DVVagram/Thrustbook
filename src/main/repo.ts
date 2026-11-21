@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { getDb, type Db } from './db';
 import { ENTITY_LABELS } from '../shared/constants';
+import { isTemplateEntity, normalizeTemplateFields, validateTemplateValues } from '../shared/templates';
 
 export const TABLES: Record<string, string> = {
   project: 'projects',
@@ -30,6 +31,7 @@ export const TABLES: Record<string, string> = {
   workspace: 'workspaces',
   comparison: 'comparisons',
   import_template: 'import_templates',
+  entry_template: 'entry_templates',
   report: 'reports',
   activity: 'activity',
 };
@@ -93,6 +95,35 @@ function coerceValue(value: any): any {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'object') return JSON.stringify(value);
   return value;
+}
+
+const TEMPLATE_FINAL_STATUSES = ['Completed', 'Complete', 'Failed', 'Aborted', 'Verified', 'Closed', 'Archived'];
+
+function parseCustomValues(value: any): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value)) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Validates values entered through a template. Type and selection constraints always
+ * apply; required fields are enforced once the record reaches a final state so that
+ * planned records can be created first and completed later.
+ */
+function assertTemplateValues(templateId: string, values: any, status: string): void {
+  if (!templateId) return;
+  const row = getDb().get<any>('SELECT id, name, fields_json FROM entry_templates WHERE id = ?', [templateId]);
+  if (!row) return;
+  const fields = normalizeTemplateFields(parseCustomValues(row.fields_json) as any);
+  const errors = validateTemplateValues(
+    TEMPLATE_FINAL_STATUSES.includes(status) ? fields : fields.map((f) => ({ ...f, required: false })),
+    parseCustomValues(values),
+  );
+  if (errors.length) throw new Error(`Template “${row.name}”: ${errors.join('; ')}`);
 }
 
 export interface ListOptions {
@@ -220,6 +251,10 @@ export function createRecord(entity: string, data: Record<string, any>): any {
     if (entity !== 'setting') row.name = data.title ?? data.label ?? `${ENTITY_LABELS[entity] ?? 'Record'}`;
   }
 
+  if (isTemplateEntity(entity) && row.template_id) {
+    assertTemplateValues(String(row.template_id), row.custom_json, String(row.status ?? ''));
+  }
+
   const keys = Object.keys(row);
   db.run(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, keys.map((k) => row[k]));
 
@@ -265,6 +300,11 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
     params.push(next);
   }
   if (keys.length === 0) return getRecord(entity, id);
+  if (isTemplateEntity(entity) && (patch.template_id !== undefined || patch.custom_json !== undefined)) {
+    const templateId = String(patch.template_id !== undefined ? patch.template_id || '' : existing.template_id || '');
+    const values = patch.custom_json !== undefined ? patch.custom_json : parseCustomValues(existing.custom_json);
+    assertTemplateValues(templateId, values, String(patch.status !== undefined ? patch.status : existing.status ?? ''));
+  }
   if (cols.has('updated_at')) {
     keys.push('updated_at');
     params.push(nowIso());
@@ -327,6 +367,7 @@ export function removeRecord(entity: string, id: string): RemoveResult {
       { table: 'graphs', column: 'project_id' },
       { table: 'workspaces', column: 'project_id' },
       { table: 'comparisons', column: 'project_id' },
+      { table: 'entry_templates', column: 'project_id' },
       { table: 'reports', column: 'project_id' },
       { table: 'activity', column: 'project_id' },
     ],
@@ -529,11 +570,11 @@ export function searchGlobal(term: string, projectId?: string): SearchHit[] {
     (r) => push('revision', r, r.label, 'Revision', `#/revision/${r.id}`, r.project_name),
   );
 
-  db.all<any>(`SELECT t.*, p.name AS project_name FROM tests t LEFT JOIN projects p ON p.id = t.project_id WHERE (t.name LIKE ? OR t.test_no LIKE ? OR t.objectives LIKE ? OR t.observations LIKE ?)${scoped.replace('project_id', 't.project_id')} LIMIT 40`, [like, like, like, like, ...p]).forEach(
+  db.all<any>(`SELECT t.*, p.name AS project_name FROM tests t LEFT JOIN projects p ON p.id = t.project_id WHERE (t.name LIKE ? OR t.test_no LIKE ? OR t.objectives LIKE ? OR t.observations LIKE ? OR t.custom_json LIKE ?)${scoped.replace('project_id', 't.project_id')} LIMIT 40`, [like, like, like, like, like, ...p]).forEach(
     (r) => push('test', r, r.name, r.test_no || r.category || 'Ground test', `#/ground/${r.id}`, r.project_name),
   );
 
-  db.all<any>(`SELECT f.*, p.name AS project_name FROM flights f LEFT JOIN projects p ON p.id = f.project_id WHERE (f.name LIKE ? OR f.flight_no LIKE ? OR f.objectives LIKE ? OR f.observations LIKE ?)${scoped.replace('project_id', 'f.project_id')} LIMIT 40`, [like, like, like, like, ...p]).forEach(
+  db.all<any>(`SELECT f.*, p.name AS project_name FROM flights f LEFT JOIN projects p ON p.id = f.project_id WHERE (f.name LIKE ? OR f.flight_no LIKE ? OR f.objectives LIKE ? OR f.observations LIKE ? OR f.custom_json LIKE ?)${scoped.replace('project_id', 'f.project_id')} LIMIT 40`, [like, like, like, like, like, ...p]).forEach(
     (r) => push('flight', r, r.name, r.flight_no || 'Flight', `#/flights/${r.id}`, r.project_name),
   );
 
@@ -574,6 +615,10 @@ export function searchGlobal(term: string, projectId?: string): SearchHit[] {
 
   db.all<any>(`SELECT r.*, p.name AS project_name FROM reports r LEFT JOIN projects p ON p.id = r.project_id WHERE r.title LIKE ?${scoped.replace('project_id', 'r.project_id')} LIMIT 20`, [like, ...p]).forEach(
     (r) => push('report', r, r.title, 'Report', `#/reports?report=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT * FROM entry_templates WHERE (name LIKE ? OR description LIKE ? OR category LIKE ?) ORDER BY updated_at DESC LIMIT 20`, [like, like, like]).forEach(
+    (r) => push('entry_template', r, r.name, `Entry template · ${r.applies_to}`, `#/templates?template=${r.id}`, ''),
   );
 
   const seen = new Set<string>();

@@ -23,6 +23,7 @@ import DocumentsPage from './pages/Documents';
 import IssuesPage from './pages/Issues';
 import ReportsPage from './pages/Reports';
 import SettingsPage from './pages/Settings';
+import TemplatesPage from './pages/Templates';
 
 const PAGE_ROUTES: Record<string, { nav: string; render: () => React.ReactNode }> = {
   dashboard: { nav: 'dashboard', render: () => <Dashboard /> },
@@ -42,6 +43,7 @@ const PAGE_ROUTES: Record<string, { nav: string; render: () => React.ReactNode }
   documents: { nav: 'documents', render: () => <DocumentsPage /> },
   issues: { nav: 'issues', render: () => <IssuesPage /> },
   reports: { nav: 'reports', render: () => <ReportsPage /> },
+  templates: { nav: 'templates', render: () => <TemplatesPage /> },
   settings: { nav: 'settings', render: () => <SettingsPage /> },
 };
 
@@ -61,6 +63,7 @@ const NAV_PATHS: Record<string, string> = {
   documents: '#/documents',
   issues: '#/issues',
   reports: '#/reports',
+  templates: '#/templates',
   settings: '#/settings',
 };
 
@@ -160,9 +163,33 @@ function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 export default function App() {
-  const { ready, error, projects, projectId, setProject, project, route, navigate, theme, toggleTheme, settings, notify, updateState, info } = useApp();
+  const { ready, error, projects, projectId, setProject, project, route, navigate, theme, toggleTheme, settings, notify, updateState, info, confirm, setBusy } = useApp();
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
+
+  const switchWorkspace = async () => {
+    const target = info?.examplesWorkspace ? 'user' : 'examples';
+    const ok = await confirm({
+      title: target === 'examples' ? 'Open the example workspace?' : 'Return to your own data?',
+      message:
+        target === 'examples'
+          ? 'The application restarts into a separate workspace containing the bundled example programme.'
+          : 'The application restarts and reopens your own projects and recordings.',
+      details:
+        target === 'examples'
+          ? 'Example projects use their own database and file folders. They are never mixed with your data, excluded from your backups, and can be reset or deleted at any time.'
+          : 'Nothing in the example workspace is copied into your projects.',
+      confirmLabel: target === 'examples' ? 'Open examples' : 'Return to my data',
+    });
+    if (!ok) return;
+    try {
+      setBusy('Switching workspace…');
+      await api.switchWorkspace(target);
+    } catch (err: any) {
+      setBusy(null);
+      notify(err.message, 'error');
+    }
+  };
 
   const handleAction = async (action: string) => {
     switch (action) {
@@ -337,6 +364,10 @@ export default function App() {
         </nav>
 
         <div className="sidebar-foot">
+          <button className={`workspace-switch ${info?.examplesWorkspace ? 'examples' : ''}`} onClick={switchWorkspace} title="Switch workspace">
+            <Icon name={info?.examplesWorkspace ? 'folder' : 'flask'} size={14} />
+            <span>{info?.examplesWorkspace ? 'Return to my data' : 'Open example data'}</span>
+          </button>
           <div className="version-line">
             v{info?.version} · local
             {updateState?.state === 'available' && (
@@ -396,6 +427,19 @@ export default function App() {
             )}
           </div>
         </header>
+
+        {info?.examplesWorkspace && (
+          <div className="workspace-banner">
+            <Icon name="flask" size={15} />
+            <div>
+              <strong>Example workspace</strong> — this is the bundled demonstration programme in its own database and folders. Nothing here affects your own
+              projects, searches, backups or exports.
+            </div>
+            <Button size="sm" icon="folder" onClick={switchWorkspace}>
+              Return to my data
+            </Button>
+          </div>
+        )}
 
         <main className="content">{PAGE_ROUTES[route.page]?.render() ?? <Dashboard />}</main>
 

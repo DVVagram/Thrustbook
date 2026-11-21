@@ -9,6 +9,7 @@ import { dataLog, revisionCompare } from './engineering';
 import { lineChartSvg, barChartSvg, PALETTE } from './svg';
 import { reportsDir } from './paths';
 import { APP_NAME, APP_TAGLINE } from '../shared/constants';
+import { displayCustomValue, normalizeTemplateFields } from '../shared/templates';
 import { formatNumber, convertUnit, unitDef } from '../shared/units';
 import type { Stats } from '../shared/analysis';
 
@@ -194,6 +195,27 @@ function datasetBlock(datasetId: string, options: { charts: boolean; heading?: s
   return parts.join('');
 }
 
+function templateValuesBlock(record: any): string {
+  if (!record?.template_id) return '';
+  const row = getDb().get<any>('SELECT * FROM entry_templates WHERE id = ?', [record.template_id]);
+  if (!row) return '';
+  let fields: any[] = [];
+  try {
+    fields = normalizeTemplateFields(JSON.parse(row.fields_json || '[]'));
+  } catch {
+    fields = [];
+  }
+  let values: Record<string, any> = {};
+  try {
+    values = JSON.parse(record.custom_json || '{}') ?? {};
+  } catch {
+    values = {};
+  }
+  const rows = fields.map((f) => [f.label + (f.unit ? ` [${f.unit}]` : ''), displayCustomValue(f, values[f.key])]);
+  if (!rows.length) return '';
+  return `<p class="muted">User-entered values from the “${esc(row.name)}” entry template. These are recorded entries, not calculated results.</p>${table(['Field', 'Value'], rows)}`;
+}
+
 function issuesTable(issues: any[]): string {
   if (!issues?.length) return '<p class="muted">No linked issues.</p>';
   return table(
@@ -265,6 +287,7 @@ export function buildReportHtml(spec: ReportSpec): { html: string; title: string
         ]),
       );
       section('Objectives and description', `${paragraph(test.objectives)}${paragraph(test.description)}`);
+      if (templateValuesBlock(test)) section('Template fields', templateValuesBlock(test));
       section(
         'Test conditions and configuration',
         `${kv([
@@ -319,6 +342,7 @@ export function buildReportHtml(spec: ReportSpec): { html: string; title: string
         ]),
       );
       section('Objectives and description', `${paragraph(flight.objectives)}${paragraph(flight.description)}`);
+      if (templateValuesBlock(flight)) section('Template fields', templateValuesBlock(flight));
       section(
         'Environment and configuration',
         kv([

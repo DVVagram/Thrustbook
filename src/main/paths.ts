@@ -22,12 +22,58 @@ export interface StorageConfig {
 
 let cached: StorageConfig | null = null;
 
+export type WorkspaceMode = 'user' | 'examples';
+
 function pointerFile(): string {
   return path.join(app.getPath('userData'), 'storage.json');
 }
 
+function workspaceFile(): string {
+  return path.join(app.getPath('userData'), 'workspace.json');
+}
+
+/**
+ * The example programme lives in its own storage root with its own database and
+ * files. It is never opened together with the user's data: the active workspace is
+ * chosen before the database connection is created.
+ */
+export function examplesRoot(): string {
+  return process.env.ROCKETLAB_EXAMPLES_ROOT
+    ? path.resolve(process.env.ROCKETLAB_EXAMPLES_ROOT)
+    : path.join(app.getPath('userData'), 'examples');
+}
+
+let modeCache: WorkspaceMode | null = null;
+
+export function workspaceMode(): WorkspaceMode {
+  if (modeCache) return modeCache;
+  const envMode = process.env.ROCKETLAB_WORKSPACE;
+  if (envMode === 'examples' || envMode === 'user') {
+    modeCache = envMode;
+    return modeCache;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(workspaceFile(), 'utf8'));
+    modeCache = parsed?.mode === 'examples' ? 'examples' : 'user';
+  } catch {
+    modeCache = 'user';
+  }
+  return modeCache;
+}
+
+export function setWorkspaceMode(mode: WorkspaceMode): void {
+  fs.mkdirSync(path.dirname(workspaceFile()), { recursive: true });
+  fs.writeFileSync(workspaceFile(), JSON.stringify({ mode }, null, 2));
+  modeCache = null;
+  cached = null;
+}
+
 export function readStorageConfig(): StorageConfig {
   if (cached) return cached;
+  if (workspaceMode() === 'examples') {
+    cached = { dataDir: path.join(examplesRoot(), 'data'), configFile: workspaceFile() };
+    return cached;
+  }
   const file = pointerFile();
   const fallback = path.join(app.getPath('userData'), 'data');
   let dataDir = fallback;

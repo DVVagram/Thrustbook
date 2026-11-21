@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { app, BrowserWindow, Menu, shell, session } from 'electron';
 import { getSetting, closeDatabase, openDatabase, schemaVersion } from './db';
-import { ensureStorage, dataDir } from './paths';
+import { ensureStorage, dataDir, workspaceMode } from './paths';
+import { ensureExamplesWorkspace } from './examples';
 import { registerIpc } from './ipc';
 import { createBackup, listBackups } from './archive';
 import { APP_NAME } from '../shared/constants';
@@ -215,7 +216,8 @@ if (!gotLock) {
     ensureStorage();
     try {
       openDatabase();
-      console.log(`Storage: ${dataDir()} · schema v${schemaVersion()}`);
+      console.log(`Storage: ${dataDir()} · schema v${schemaVersion()} · workspace ${workspaceMode()}`);
+      await ensureExamplesWorkspace();
     } catch (err) {
       console.error('Database startup failed', err);
     }
@@ -231,6 +233,7 @@ if (!gotLock) {
     // A single lightweight automatic backup per day, never blocking startup.
     setTimeout(async () => {
       try {
+        if (workspaceMode() === 'examples') return;
         if (getSetting('backupOnStart') !== 'true') return;
         const backups = listBackups().filter((b) => b.kind === 'automatic');
         const newest = backups[0];

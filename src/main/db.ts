@@ -509,6 +509,29 @@ ALTER TABLE datasets ADD COLUMN row_count_raw INTEGER DEFAULT 0;
 ALTER TABLE datasets ADD COLUMN quality_status TEXT DEFAULT 'ok';
 `,
   },
+  {
+    version: 3,
+    name: 'reusable data-entry templates and custom values',
+    sql: `
+CREATE TABLE IF NOT EXISTS entry_templates (
+  id TEXT PRIMARY KEY,
+  project_id TEXT DEFAULT '',
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  applies_to TEXT NOT NULL DEFAULT 'test',
+  category TEXT DEFAULT '',
+  fields_json TEXT DEFAULT '[]',
+  archived INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entry_templates_target ON entry_templates(applies_to, project_id);
+ALTER TABLE tests ADD COLUMN template_id TEXT DEFAULT '';
+ALTER TABLE flights ADD COLUMN template_id TEXT DEFAULT '';
+ALTER TABLE runs ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE runs ADD COLUMN template_id TEXT DEFAULT '';
+`,
+  },
 ];
 
 export interface Db {

@@ -113,6 +113,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   comparison: 'Comparison',
   report: 'Report',
   event: 'Event marker',
+  entry_template: 'Entry template',
 };
 
 export const NAV_ITEMS: { key: string; label: string; group: string; icon: string }[] = [
@@ -131,6 +132,7 @@ export const NAV_ITEMS: { key: string; label: string; group: string; icon: strin
   { key: 'documents', label: 'Engineering Documentation', group: 'Records', icon: 'doc' },
   { key: 'issues', label: 'Issues & Observations', group: 'Records', icon: 'alert' },
   { key: 'reports', label: 'Reports', group: 'Records', icon: 'report' },
+  { key: 'templates', label: 'Entry Templates', group: 'System', icon: 'log' },
   { key: 'settings', label: 'Settings', group: 'System', icon: 'gear' },
 ];
 

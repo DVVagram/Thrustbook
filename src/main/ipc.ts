@@ -51,7 +51,8 @@ import {
   storageInfo,
 } from './archive';
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, updateStatus } from './updates';
-import { dataDir, documentsDir, isInside, safeFileName, uniquePath } from './paths';
+import { dataDir, documentsDir, examplesRoot, isInside, safeFileName, setWorkspaceMode, uniquePath, workspaceMode } from './paths';
+import { deleteExamplesWorkspace, examplesStatus } from './examples';
 import { DEFAULT_STAGES } from '../shared/constants';
 import { newId, nowIso } from './repo';
 
@@ -218,9 +219,49 @@ const handlers: Record<string, Handler> = {
     node: process.versions.node,
     chrome: process.versions.chrome,
     dataDir: dataDir(),
+    workspaceMode: workspaceMode(),
+    examplesWorkspace: workspaceMode() === 'examples',
+    examplesDir: examplesRoot(),
     packaged: app.isPackaged,
     isDev: !app.isPackaged,
   }),
+
+  'workspace.info': () => ({ ...examplesStatus(), dataDir: dataDir(), examplesRoot: examplesRoot() }),
+  'workspace.switch': (payload: any) => {
+    const mode = payload?.mode === 'examples' ? 'examples' : 'user';
+    if (workspaceMode() === mode) return { switched: false, mode };
+    setWorkspaceMode(mode);
+    // The database connection is bound to a workspace root, so the application
+    // restarts rather than attempting to swap connections underneath open views.
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 250);
+    return { switched: true, mode };
+  },
+  'workspace.resetExamples': () => {
+    const inExamples = workspaceMode() === 'examples';
+    deleteExamplesWorkspace();
+    if (inExamples) {
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 250);
+    }
+    return { ok: true, inExamples };
+  },
+  'workspace.deleteExamples': () => {
+    const inExamples = workspaceMode() === 'examples';
+    if (inExamples) setWorkspaceMode('user');
+    deleteExamplesWorkspace();
+    if (inExamples) {
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 250);
+    }
+    return { ok: true, inExamples };
+  },
 
   'settings.all': () => allSettings(),
   'settings.set': (payload: any) => {
@@ -489,10 +530,15 @@ const handlers: Record<string, Handler> = {
 
   'storage.info': () => storageInfo(),
   'storage.integrity': () => integrityCheck(),
-  'storage.move': (payload: any, win) => handlePickDirectory({ title: 'Choose the new data folder' }, win).then(async (picked) => {
-    if (picked.canceled || !picked.path) return { canceled: true };
-    return { canceled: false, ...(await moveStorage(picked.path)) };
-  }),
+  'storage.move': (payload: any, win) => {
+    if (workspaceMode() === 'examples') {
+      throw new Error('The example workspace cannot be relocated. Return to your own data first.');
+    }
+    return handlePickDirectory({ title: 'Choose the new data folder' }, win).then(async (picked) => {
+      if (picked.canceled || !picked.path) return { canceled: true };
+      return { canceled: false, ...(await moveStorage(picked.path)) };
+    });
+  },
 
   'updates.status': () => updateStatus(),
   'updates.check': () => checkForUpdates(),

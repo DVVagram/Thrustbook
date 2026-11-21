@@ -27,12 +27,14 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [repoDraft, setRepoDraft] = useState(settings.updateRepo ?? '');
   const [newBackupLabel, setNewBackupLabel] = useState('');
+  const [workspace, setWorkspace] = useState<any>(null);
 
   const loadStorage = async () => setStorage(await api.storage());
   const loadBackups = async () => setBackups(await api.backups());
 
   useEffect(() => {
     if (tab === 'storage' || tab === 'data') void loadStorage();
+    if (tab === 'data') api.workspaceInfo().then(setWorkspace).catch(() => undefined);
     if (tab === 'backups' || tab === 'data') void loadBackups();
     if (tab === 'updates') {
       api.updateStatus().then(setUpdates).catch(() => undefined);
@@ -292,6 +294,109 @@ export default function SettingsPage() {
               Project exports include all records, original dataset files, documents, configurations and their relationships. Importing remaps identifiers so
               relationships are preserved and existing projects are never overwritten.
             </p>
+          </Panel>
+          <Panel
+            title="Example workspace"
+            subtitle="Bundled sample programme, isolated from your own data"
+            actions={<Badge tone={info?.examplesWorkspace ? 'warn' : 'neutral'}>{info?.examplesWorkspace ? 'Examples active' : 'My data active'}</Badge>}
+          >
+            <div className="stack">
+              <p className="muted small">
+                Example projects, tests, flights and recordings are stored in their own database and folders. They never appear in your searches, dashboards,
+                backups, exports or reports, and nothing you do in the example workspace is copied into your projects.
+              </p>
+              <div className="kv-grid">
+                <div className="kv-item">
+                  <span className="kv-key">Example data folder</span>
+                  <span className="kv-value mono small">{workspace?.examplesRoot ?? info?.examplesDir ?? '—'}</span>
+                </div>
+                <div className="kv-item">
+                  <span className="kv-key">Status</span>
+                  <span className="kv-value">{workspace?.exists ? `Seeded (version ${workspace.seedVersion ?? 1})` : 'Not created yet'}</span>
+                </div>
+              </div>
+              <div className="modal-actions-row">
+                <Button
+                  icon="flask"
+                  onClick={async () => {
+                    const target = info?.examplesWorkspace ? 'user' : 'examples';
+                    const ok = await confirm({
+                      title: target === 'examples' ? 'Open the example workspace?' : 'Return to your own data?',
+                      message:
+                        target === 'examples'
+                          ? 'The application restarts into the separate example workspace.'
+                          : 'The application restarts and reopens your own projects.',
+                      confirmLabel: target === 'examples' ? 'Open examples' : 'Return to my data',
+                    });
+                    if (!ok) return;
+                    try {
+                      setBusy(true);
+                      await api.switchWorkspace(target);
+                    } catch (err: any) {
+                      setBusy(false);
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  {info?.examplesWorkspace ? 'Return to my data' : 'Open example data'}
+                </Button>
+                <Button
+                  icon="refresh"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Reset the example workspace?',
+                      message: 'The example database and its files are deleted and rebuilt from the bundled seed.',
+                      details: 'Your own projects are not affected in any way.',
+                      confirmLabel: 'Reset examples',
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    try {
+                      setBusy(true);
+                      const result = await api.resetExamples();
+                      if (!result.inExamples) {
+                        setBusy(false);
+                        notify('Example workspace deleted; it will be recreated next time it is opened.', 'success');
+                        setWorkspace(await api.workspaceInfo());
+                      }
+                    } catch (err: any) {
+                      setBusy(false);
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  Reset example data
+                </Button>
+                <Button
+                  variant="danger"
+                  icon="trash"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Delete the example workspace?',
+                      message: 'The bundled example projects, datasets and reports are removed from this computer.',
+                      details: 'Your own data is untouched. Examples are recreated only if you open the example workspace again.',
+                      confirmLabel: 'Delete examples',
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    try {
+                      setBusy(true);
+                      const result = await api.deleteExamples();
+                      if (!result.inExamples) {
+                        setBusy(false);
+                        notify('Example workspace deleted', 'success');
+                        setWorkspace(await api.workspaceInfo());
+                      }
+                    } catch (err: any) {
+                      setBusy(false);
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  Delete example data
+                </Button>
+              </div>
+            </div>
           </Panel>
         </div>
       )}

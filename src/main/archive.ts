@@ -233,7 +233,7 @@ export async function createBackup(label = '', kind: BackupInfo['kind'] = 'manua
   const file = path.join(backupsDir(), name);
 
   const counts: Record<string, number> = {};
-  for (const table of ['projects', 'revisions', 'tests', 'flights', 'datasets', 'channels', 'documents', 'issues', 'components', 'sensors']) {
+  for (const table of ['projects', 'revisions', 'tests', 'flights', 'datasets', 'channels', 'documents', 'issues', 'components', 'sensors', 'entry_templates']) {
     try {
       counts[table] = Number((db.get<any>(`SELECT COUNT(*) AS c FROM ${table}`) as any)?.c ?? 0);
     } catch {
@@ -447,6 +447,7 @@ const REFERENCE_COLUMNS = [
   'entity_id',
   'electronics_config_id',
   'config_snapshot_id',
+  'template_id',
 ];
 
 function projectTableRows(projectId: string): Record<string, any[]> {
@@ -476,6 +477,7 @@ function projectTableRows(projectId: string): Record<string, any[]> {
     'graphs',
     'workspaces',
     'comparisons',
+    'entry_templates',
     'reports',
     'activity',
   ];
@@ -681,6 +683,7 @@ export async function importProject(archivePath: string, options: { rename?: str
       insertRows('graphs', tables.graphs ?? []);
       insertRows('workspaces', tables.workspaces ?? []);
       insertRows('comparisons', tables.comparisons ?? []);
+      insertRows('entry_templates', tables.entry_templates ?? []);
       insertRows('reports', tables.reports ?? []);
       insertRows('activity', tables.activity ?? []);
       db.run(
