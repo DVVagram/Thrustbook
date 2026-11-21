@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow } from 'electron';
 import { getSetting, setSetting } from './db';
 import type { UpdateStatus } from '../shared/types';
+import { DEFAULT_UPDATE_REPO } from '../shared/constants';
 
 /**
  * Update handling.
@@ -45,7 +46,8 @@ function feedConfig(): { owner: string; repo: string } | null {
   } catch {
     /* no package metadata */
   }
-  return null;
+  const [owner, repo] = DEFAULT_UPDATE_REPO.split('/');
+  return owner && repo ? { owner, repo } : null;
 }
 
 function getUpdater(): any {

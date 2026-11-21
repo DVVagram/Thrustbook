@@ -1,5 +1,6 @@
 export const APP_NAME = 'Thrustbook';
 export const APP_TAGLINE = 'Rocket Development, Testing & Engineering Analysis Platform';
+export const DEFAULT_UPDATE_REPO = 'DVVagram/Thrustbook';
 
 export const PROJECT_STATUSES = ['Planning', 'In development', 'Testing', 'Flight campaign', 'On hold', 'Complete', 'Archived'];
 export const REVISION_STATUSES = ['Concept', 'In design', 'Built', 'Tested', 'Flown', 'Superseded', 'Archived'];

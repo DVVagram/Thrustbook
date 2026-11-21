@@ -200,9 +200,11 @@ credentials the DMG is unsigned and Gatekeeper will warn.
 the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
 
 1. The update feed is configured for `DVVagram/Thrustbook` in `electron-builder.yml`
-   (`publish.owner` / `publish.repo`); CI overrides it from the repository context. The app can be
-   pointed at another repository at runtime with the `updateRepo` setting (`owner/repo`).
-2. Push a tag: `git tag v2.0.0 && git push origin v2.0.0`.
+   (`publish.owner` / `publish.repo`); CI overrides it from the repository context. New profiles
+   default `updateRepo` to `DVVagram/Thrustbook`, and an empty value falls back to the same repository,
+   so a fresh install does not need any feed entry. The app can be pointed at another repository at
+   runtime with the `updateRepo` setting (`owner/repo`).
+2. Push a tag: `git tag v2.1.0 && git push origin v2.1.0`.
 3. Approve the draft release after the artifacts are attached.
 
 Signing secrets (all optional; unsigned builds install with OS warnings):
@@ -264,6 +266,9 @@ explicitly starts the download/install, and never touch user data.
   were found during this pass and fixed: a missing unit cost previously defaulted to zero, an
   impossible date such as `2026-02-31` was previously accepted by JavaScript date normalisation, and
   date-only ledger values could display a day earlier in some timezones.
+- The 2.1.0 Windows package was installed with a fresh data folder: it reported version 2.1.0,
+  migrated the database to v4, showed Inventory and Finance in the sidebar, and defaulted the release
+  feed to `DVVagram/Thrustbook` without any manual entry.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.

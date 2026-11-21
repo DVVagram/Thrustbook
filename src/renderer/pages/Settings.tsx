@@ -4,7 +4,7 @@ import { useApp, useAsync } from '../state';
 import { Badge, Button, DataTable, EmptyState, Field, Icon, Input, KeyValue, Modal, PageHeader, Panel, Select, Tabs, Toggle } from '../ui';
 import { bytes, fmtDateTime } from '../format';
 import { UNITS, unitsForDimension } from '../../shared/units';
-import { APP_NAME, APP_TAGLINE } from '../../shared/constants';
+import { APP_NAME, APP_TAGLINE, DEFAULT_UPDATE_REPO } from '../../shared/constants';
 
 const UNIT_SETTINGS: { key: string; label: string; dimension: string }[] = [
   { key: 'lengthUnit', label: 'Length', dimension: 'length' },
@@ -25,7 +25,7 @@ export default function SettingsPage() {
   const [updates, setUpdates] = useState<any>(null);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [repoDraft, setRepoDraft] = useState(settings.updateRepo ?? '');
+  const [repoDraft, setRepoDraft] = useState(settings.updateRepo || DEFAULT_UPDATE_REPO);
   const [newBackupLabel, setNewBackupLabel] = useState('');
   const [workspace, setWorkspace] = useState<any>(null);
 
@@ -544,7 +544,7 @@ export default function SettingsPage() {
                   ['Installed version', info?.version],
                   ['Build', info?.packaged ? 'Release build' : 'Development build'],
                   ['Operating system', `${info?.platform} ${info?.arch}`],
-                  ['Release feed', settings.updateRepo || 'Not configured (set owner/repository below)'],
+                  ['Release feed', settings.updateRepo || DEFAULT_UPDATE_REPO],
                   ['Status', updates?.state ? <Badge>{updates.state}</Badge> : 'Not checked in this session'],
                   ['Latest version', updates?.latestVersion ?? '—'],
                   ['Release date', updates?.releaseDate ? fmtDateTime(updates.releaseDate) : '—'],

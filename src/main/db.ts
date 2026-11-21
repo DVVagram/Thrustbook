@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { backupsDir, dbFile } from './paths';
+import { DEFAULT_UPDATE_REPO } from '../shared/constants';
 
 export type SqlParam = string | number | null;
 
@@ -702,7 +703,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   backupOnStart: 'true',
   backupRetention: '10',
   autoCheckUpdates: 'true',
-  updateRepo: '',
+  updateRepo: DEFAULT_UPDATE_REPO,
   defaultGraphPoints: '4000',
   defaultChartType: 'line',
   importDefaultSamplingHz: '',
