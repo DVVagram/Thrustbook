@@ -1,0 +1,697 @@
+import crypto from 'node:crypto';
+import { getDb, type Db } from './db';
+import { ENTITY_LABELS } from '../shared/constants';
+
+export const TABLES: Record<string, string> = {
+  project: 'projects',
+  rocket: 'rockets',
+  revision: 'revisions',
+  stage: 'stages',
+  campaign: 'campaigns',
+  test: 'tests',
+  flight: 'flights',
+  experiment: 'experiments',
+  run: 'runs',
+  dataset: 'datasets',
+  channel: 'channels',
+  event: 'events',
+  component: 'components',
+  component_usage: 'component_usage',
+  electronics_config: 'electronics_configs',
+  config_item: 'config_items',
+  sensor: 'sensors',
+  sensor_installation: 'sensor_installations',
+  calibration: 'calibrations',
+  config_snapshot: 'config_snapshots',
+  document: 'documents',
+  issue: 'issues',
+  note: 'notes',
+  graph: 'graphs',
+  workspace: 'workspaces',
+  comparison: 'comparisons',
+  import_template: 'import_templates',
+  report: 'reports',
+  activity: 'activity',
+};
+
+export function tableFor(entity: string): string {
+  const t = TABLES[entity];
+  if (!t) throw new Error(`Unknown record type: ${entity}`);
+  return t;
+}
+
+export function newId(): string {
+  return crypto.randomUUID();
+}
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+/** Columns sanctioned by the live schema (blocks SQL injection through keys). */
+const columnCache = new Map<string, Set<string>>();
+
+export function columnsFor(table: string): Set<string> {
+  const cached = columnCache.get(table);
+  if (cached) return cached;
+  const cols = new Set(getDb().all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name));
+  columnCache.set(table, cols);
+  return cols;
+}
+
+function parseJsonFields(row: any): any {
+  if (!row) return row;
+  for (const key of Object.keys(row)) {
+    if (key.endsWith('_json')) {
+      const value = row[key];
+      if (typeof value === 'string' && value.trim()) {
+        try {
+          row[key.replace(/_json$/, '')] = JSON.parse(value);
+        } catch {
+          row[key.replace(/_json$/, '')] = null;
+        }
+      } else {
+        row[key.replace(/_json$/, '')] = null;
+      }
+    }
+  }
+  return row;
+}
+
+export function expand<T = any>(rows: T[]): T[] {
+  return rows.map((r) => parseJsonFields(r)) as T[];
+}
+
+export function expandOne<T = any>(row: T | undefined): T | undefined {
+  return row ? (parseJsonFields(row) as T) : undefined;
+}
+
+function coerceValue(value: any): any {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return value;
+}
+
+export interface ListOptions {
+  where?: Record<string, any>;
+  q?: string;
+  searchColumns?: string[];
+  orderBy?: string;
+  order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export function list(entity: string, opts: ListOptions = {}): any[] {
+  const table = tableFor(entity);
+  const cols = columnsFor(table);
+  const clauses: string[] = [];
+  const params: any[] = [];
+
+  for (const [key, value] of Object.entries(opts.where ?? {})) {
+    if (!cols.has(key)) continue;
+    if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      clauses.push(`${key} IN (${value.map(() => '?').join(',')})`);
+      params.push(...value);
+      continue;
+    }
+    clauses.push(`${key} = ?`);
+    params.push(value);
+  }
+
+  if (opts.q && opts.q.trim()) {
+    const term = `%${opts.q.trim()}%`;
+    const searchable = (opts.searchColumns ?? ['name', 'title', 'label', 'description', 'notes', 'tags', 'test_no', 'flight_no', 'serial', 'category']).filter(
+      (c) => cols.has(c),
+    );
+    if (searchable.length > 0) {
+      clauses.push(`(${searchable.map((c) => `${c} LIKE ?`).join(' OR ')})`);
+      params.push(...searchable.map(() => term));
+    }
+  }
+
+  const orderCol = opts.orderBy && cols.has(opts.orderBy) ? opts.orderBy : cols.has('updated_at') ? 'updated_at' : 'created_at';
+  const direction = opts.order === 'asc' ? 'ASC' : 'DESC';
+  const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000));
+  const offset = Math.max(0, opts.offset ?? 0);
+
+  const sql = `SELECT * FROM ${table}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY ${orderCol} ${direction} LIMIT ${limit} OFFSET ${offset}`;
+  return expand(getDb().all(sql, params));
+}
+
+export function getRecord(entity: string, id: string): any | undefined {
+  const table = tableFor(entity);
+  return expandOne(getDb().get(`SELECT * FROM ${table} WHERE id = ?`, [id]));
+}
+
+export function findOne(entity: string, where: Record<string, any>): any | undefined {
+  const table = tableFor(entity);
+  const cols = columnsFor(table);
+  const keys = Object.keys(where).filter((k) => cols.has(k));
+  if (keys.length === 0) return undefined;
+  const sql = `SELECT * FROM ${table} WHERE ${keys.map((k) => `${k} = ?`).join(' AND ')} LIMIT 1`;
+  return expandOne(getDb().get(sql, keys.map((k) => where[k])));
+}
+
+const DISPLAY_FIELD = ['name', 'title', 'label'];
+
+function displayName(entity: string, row: any): string {
+  for (const f of DISPLAY_FIELD) if (row?.[f]) return String(row[f]);
+  return ENTITY_LABELS[entity] ?? entity;
+}
+
+export interface ActivityInput {
+  project_id: string;
+  entity_type: string;
+  entity_id: string;
+  kind?: string;
+  title: string;
+  detail?: string;
+  tags?: string;
+  at?: string;
+}
+
+export function logActivity(input: ActivityInput, database: Db = getDb()): void {
+  if (!input.project_id) return;
+  database.run(
+    `INSERT INTO activity (id, project_id, entity_type, entity_id, kind, title, detail, at, tags, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'user')`,
+    [
+      newId(),
+      input.project_id,
+      input.entity_type,
+      input.entity_id,
+      input.kind ?? 'update',
+      input.title,
+      input.detail ?? '',
+      input.at ?? nowIso(),
+      input.tags ?? '',
+    ],
+  );
+}
+
+function touchProject(projectId: string, database: Db): void {
+  if (!projectId) return;
+  database.run('UPDATE projects SET updated_at = ? WHERE id = ?', [nowIso(), projectId]);
+}
+
+export function createRecord(entity: string, data: Record<string, any>): any {
+  const table = tableFor(entity);
+  const cols = columnsFor(table);
+  const db = getDb();
+  const id = typeof data.id === 'string' && data.id ? data.id : newId();
+  const ts = nowIso();
+  const row: Record<string, any> = { id };
+  for (const [key, value] of Object.entries(data)) {
+    if (!cols.has(key)) continue;
+    if (key === 'id') continue;
+    row[key] = coerceValue(value);
+  }
+  if (cols.has('created_at')) row.created_at = data.created_at ?? ts;
+  if (cols.has('updated_at')) row.updated_at = data.updated_at ?? ts;
+
+  if (cols.has('name') && !row.name) {
+    if (entity === 'project') throw new Error('Project name is required');
+    if (entity !== 'setting') row.name = data.title ?? data.label ?? `${ENTITY_LABELS[entity] ?? 'Record'}`;
+  }
+
+  const keys = Object.keys(row);
+  db.run(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, keys.map((k) => row[k]));
+
+  const projectId = row.project_id ?? (entity === 'project' ? id : '');
+  if (entity === 'project') {
+    db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [`project.${id}.opened`, ts]);
+  } else if (projectId) {
+    touchProject(projectId, db);
+  }
+  if (entity !== 'activity' && entity !== 'setting' && projectId) {
+    logActivity(
+      {
+        project_id: projectId,
+        entity_type: entity,
+        entity_id: id,
+        kind: 'create',
+        title: `${ENTITY_LABELS[entity] ?? entity} created`,
+        detail: displayName(entity, row),
+        at: row.performed_at || row.recorded_at || ts,
+      },
+      db,
+    );
+  }
+  return getRecord(entity, id);
+}
+
+export function updateRecord(entity: string, id: string, patch: Record<string, any>): any {
+  const table = tableFor(entity);
+  const cols = columnsFor(table);
+  const db = getDb();
+  const existing = db.get<any>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+  if (!existing) throw new Error(`${ENTITY_LABELS[entity] ?? entity} not found`);
+
+  const keys: string[] = [];
+  const params: any[] = [];
+  const changed: string[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    if (!cols.has(key) || key === 'id' || key === 'created_at') continue;
+    if (key === 'updated_at') continue;
+    const next = coerceValue(value);
+    if (String(existing[key] ?? '') !== String(next ?? '')) changed.push(key);
+    keys.push(key);
+    params.push(next);
+  }
+  if (keys.length === 0) return getRecord(entity, id);
+  if (cols.has('updated_at')) {
+    keys.push('updated_at');
+    params.push(nowIso());
+  }
+  db.run(`UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [...params, id]);
+
+  const projectId = existing.project_id ?? (entity === 'project' ? id : '');
+  if (projectId) touchProject(projectId, db);
+  if (entity !== 'activity' && entity !== 'setting' && projectId) {
+    const meaningful = changed.filter((c) => !c.endsWith('_json'));
+    logActivity(
+      {
+        project_id: projectId,
+        entity_type: entity,
+        entity_id: id,
+        kind: 'update',
+        title: `${ENTITY_LABELS[entity] ?? entity} updated`,
+        detail: changed.length ? `Changed: ${meaningful.slice(0, 12).join(', ')}` : displayName(entity, patch),
+      },
+      db,
+    );
+  }
+  return getRecord(entity, id);
+}
+
+export interface RemoveResult {
+  removed: boolean;
+  cascaded: Record<string, number>;
+}
+
+/** Removes a record and its dependent children. Datasets/files are handled by dataset service. */
+export function removeRecord(entity: string, id: string): RemoveResult {
+  const table = tableFor(entity);
+  const db = getDb();
+  const existing = db.get<any>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+  if (!existing) return { removed: false, cascaded: {} };
+  const cascaded: Record<string, number> = {};
+
+  const childDeletes: Record<string, { table: string; column: string }[]> = {
+    project: [
+      { table: 'rockets', column: 'project_id' },
+      { table: 'revisions', column: 'project_id' },
+      { table: 'stages', column: 'project_id' },
+      { table: 'campaigns', column: 'project_id' },
+      { table: 'tests', column: 'project_id' },
+      { table: 'flights', column: 'project_id' },
+      { table: 'experiments', column: 'project_id' },
+      { table: 'runs', column: 'project_id' },
+      { table: 'datasets', column: 'project_id' },
+      { table: 'channels', column: 'dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)' },
+      { table: 'events', column: 'project_id' },
+      { table: 'components', column: 'project_id' },
+      { table: 'sensors', column: 'project_id' },
+      { table: 'calibrations', column: 'project_id' },
+      { table: 'config_snapshots', column: 'project_id' },
+      { table: 'electronics_configs', column: 'project_id' },
+      { table: 'documents', column: 'project_id' },
+      { table: 'issues', column: 'project_id' },
+      { table: 'notes', column: 'project_id' },
+      { table: 'graphs', column: 'project_id' },
+      { table: 'workspaces', column: 'project_id' },
+      { table: 'comparisons', column: 'project_id' },
+      { table: 'reports', column: 'project_id' },
+      { table: 'activity', column: 'project_id' },
+    ],
+    rocket: [{ table: 'revisions', column: 'rocket_id' }],
+    revision: [{ table: 'stages', column: 'revision_id' }],
+    experiment: [{ table: 'runs', column: 'experiment_id' }],
+    dataset: [
+      { table: 'channels', column: 'dataset_id' },
+      { table: 'events', column: 'dataset_id' },
+    ],
+    electronics_config: [{ table: 'config_items', column: 'config_id' }],
+    sensor: [
+      { table: 'calibrations', column: 'sensor_id' },
+      { table: 'sensor_installations', column: 'sensor_id' },
+    ],
+    component: [
+      { table: 'component_usage', column: 'component_id' },
+      { table: 'config_items', column: 'component_id' },
+    ],
+  };
+
+  const children = childDeletes[entity] ?? [];
+  db.transaction(() => {
+    for (const child of children) {
+      if (child.column.includes('IN (SELECT')) {
+        const res = db.run(`DELETE FROM ${child.table} WHERE ${child.column.replace('dataset_id IN', 'dataset_id IN')}`, [id]);
+        cascaded[child.table] = Number(res.changes);
+      } else {
+        const res = db.run(`DELETE FROM ${child.table} WHERE ${child.column} = ?`, [id]);
+        cascaded[child.table] = Number(res.changes);
+      }
+    }
+    db.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    if (existing.project_id) {
+      logActivity(
+        {
+          project_id: existing.project_id,
+          entity_type: entity,
+          entity_id: id,
+          kind: 'delete',
+          title: `${ENTITY_LABELS[entity] ?? entity} deleted`,
+          detail: displayName(entity, existing),
+        },
+        db,
+      );
+    }
+  });
+  return { removed: true, cascaded };
+}
+
+export function countRows(table: string, where: Record<string, any> = {}): number {
+  const cols = columnsFor(table);
+  const keys = Object.keys(where).filter((k) => cols.has(k));
+  const sql = `SELECT COUNT(*) AS c FROM ${table}${keys.length ? ` WHERE ${keys.map((k) => `${k} = ?`).join(' AND ')}` : ''}`;
+  return Number(getDb().get<any>(sql, keys.map((k) => where[k]))?.c ?? 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard                                                           */
+/* ------------------------------------------------------------------ */
+
+export function dashboard(): any {
+  const db = getDb();
+  const projects = db.all<any>(`SELECT * FROM projects WHERE archived = 0 ORDER BY updated_at DESC LIMIT 12`);
+  const projectIds = projects.map((p) => p.id);
+
+  const projectSummary = projects.map((p) => {
+    const counts = db.get<any>(
+      `SELECT
+        (SELECT COUNT(*) FROM tests WHERE project_id = ?) AS tests,
+        (SELECT COUNT(*) FROM flights WHERE project_id = ?) AS flights,
+        (SELECT COUNT(*) FROM datasets WHERE project_id = ?) AS datasets,
+        (SELECT COUNT(*) FROM issues WHERE project_id = ? AND status NOT IN ('Resolved','Verified','Closed')) AS open_issues,
+        (SELECT COUNT(*) FROM revisions WHERE project_id = ?) AS revisions,
+        (SELECT COUNT(*) FROM experiments WHERE project_id = ?) AS experiments`,
+      [p.id, p.id, p.id, p.id, p.id, p.id],
+    );
+    const stage = db.get<any>(
+      `SELECT name, status FROM stages WHERE project_id = ? AND status != 'Complete' ORDER BY sort_order ASC LIMIT 1`,
+      [p.id],
+    );
+    return { ...p, counts, currentStage: stage?.name ?? null };
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const upcomingTests = db.all<any>(
+    `SELECT t.*, p.name AS project_name FROM tests t LEFT JOIN projects p ON p.id = t.project_id
+     WHERE t.status IN ('Planned','Ready') ORDER BY COALESCE(NULLIF(t.performed_at,''),'9999') ASC LIMIT 8`,
+  );
+  const recentGroundTests = db.all<any>(
+    `SELECT t.*, p.name AS project_name FROM tests t LEFT JOIN projects p ON p.id = t.project_id
+     WHERE t.status IN ('Completed','Failed','Aborted') ORDER BY t.performed_at DESC LIMIT 6`,
+  );
+  const recentFlights = db.all<any>(
+    `SELECT f.*, p.name AS project_name FROM flights f LEFT JOIN projects p ON p.id = f.project_id
+     ORDER BY NULLIF(f.performed_at,'') DESC, f.created_at DESC LIMIT 6`,
+  );
+  const recentDatasets = db.all<any>(
+    `SELECT d.*, p.name AS project_name FROM datasets d LEFT JOIN projects p ON p.id = d.project_id
+     ORDER BY d.created_at DESC LIMIT 8`,
+  );
+  const openIssues = db.all<any>(
+    `SELECT i.*, p.name AS project_name FROM issues i LEFT JOIN projects p ON p.id = i.project_id
+     WHERE i.status NOT IN ('Resolved','Verified','Closed','Won''t fix') ORDER BY
+       CASE i.severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 ELSE 4 END,
+       i.created_at DESC LIMIT 8`,
+  );
+  const recentActivity = db.all<any>(
+    `SELECT a.*, p.name AS project_name FROM activity a LEFT JOIN projects p ON p.id = a.project_id
+     ORDER BY a.at DESC LIMIT 14`,
+  );
+  const latestRevisions = db.all<any>(
+    `SELECT r.*, p.name AS project_name FROM revisions r LEFT JOIN projects p ON p.id = r.project_id
+     ORDER BY r.created_at DESC LIMIT 6`,
+  );
+  const milestones = db.all<any>(
+    `SELECT s.*, p.name AS project_name FROM stages s LEFT JOIN projects p ON p.id = s.project_id
+     WHERE s.completed_at != '' ORDER BY s.completed_at DESC LIMIT 6`,
+  );
+  const recentMeasurements = db.all<any>(
+    `SELECT c.name, c.type, c.unit, c.min, c.max, c.points, d.name AS dataset_name, d.created_at, d.id AS dataset_id
+     FROM channels c JOIN datasets d ON d.id = c.dataset_id
+     ORDER BY d.created_at DESC LIMIT 30`,
+  );
+
+  const totals = db.get<any>(
+    `SELECT (SELECT COUNT(*) FROM projects WHERE archived = 0) AS projects,
+            (SELECT COUNT(*) FROM tests) AS tests,
+            (SELECT COUNT(*) FROM flights) AS flights,
+            (SELECT COUNT(*) FROM datasets) AS datasets,
+            (SELECT COUNT(*) FROM channels) AS channels,
+            (SELECT COUNT(*) FROM issues WHERE status NOT IN ('Resolved','Verified','Closed')) AS issues`,
+  );
+
+  return {
+    projects: projectSummary,
+    totals,
+    upcomingTests,
+    recentGroundTests,
+    recentFlights,
+    recentDatasets,
+    openIssues,
+    recentActivity,
+    latestRevisions,
+    milestones,
+    recentMeasurements,
+    today,
+    projectIds,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Global search                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface SearchHit {
+  type: string;
+  id: string;
+  title: string;
+  subtitle: string;
+  project_id: string;
+  project_name: string;
+  at: string;
+  route: string;
+}
+
+export function searchGlobal(term: string, projectId?: string): SearchHit[] {
+  const db = getDb();
+  const q = (term ?? '').trim();
+  if (q.length < 1) return [];
+  const like = `%${q}%`;
+  const hits: SearchHit[] = [];
+
+  const scoped = (projectId ? ' AND project_id = ?' : '');
+  const scopedRevisions = (projectId ? ' AND r.project_id = ?' : '');
+  const p = projectId ? [projectId] : [];
+
+  const push = (type: string, row: any, title: string, subtitle: string, route: string, projectName = '') => {
+    hits.push({
+      type,
+      id: row.id,
+      title,
+      subtitle,
+      project_id: row.project_id ?? (type === 'project' ? row.id : ''),
+      project_name: projectName || row.project_name || '',
+      at: row.performed_at || row.recorded_at || row.updated_at || row.created_at || '',
+      route,
+    });
+  };
+
+  db.all<any>(`SELECT * FROM projects WHERE (name LIKE ? OR code LIKE ? OR description LIKE ? OR objectives LIKE ? OR tags LIKE ?) ORDER BY updated_at DESC LIMIT 40`, [
+    like, like, like, like, like,
+  ]).forEach((r) => push('project', r, r.name, r.code || 'Project', `#/project/${r.id}`, r.name));
+
+  db.all<any>(`SELECT r.*, p.name AS project_name FROM rockets r LEFT JOIN projects p ON p.id = r.project_id WHERE (r.name LIKE ? OR r.identifier LIKE ? OR r.description LIKE ?)${projectId ? ' AND r.project_id = ?' : ''} LIMIT 30`, [like, like, like, ...p]).forEach(
+    (r) => push('rocket', r, r.name, r.identifier || 'Rocket', `#/development?rocket=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT r.*, p.name AS project_name FROM revisions r LEFT JOIN projects p ON p.id = r.project_id WHERE (r.label LIKE ? OR r.description LIKE ?)${scopedRevisions} LIMIT 30`, [like, like, ...p]).forEach(
+    (r) => push('revision', r, r.label, 'Revision', `#/revision/${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT t.*, p.name AS project_name FROM tests t LEFT JOIN projects p ON p.id = t.project_id WHERE (t.name LIKE ? OR t.test_no LIKE ? OR t.objectives LIKE ? OR t.observations LIKE ?)${scoped.replace('project_id', 't.project_id')} LIMIT 40`, [like, like, like, like, ...p]).forEach(
+    (r) => push('test', r, r.name, r.test_no || r.category || 'Ground test', `#/ground/${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT f.*, p.name AS project_name FROM flights f LEFT JOIN projects p ON p.id = f.project_id WHERE (f.name LIKE ? OR f.flight_no LIKE ? OR f.objectives LIKE ? OR f.observations LIKE ?)${scoped.replace('project_id', 'f.project_id')} LIMIT 40`, [like, like, like, like, ...p]).forEach(
+    (r) => push('flight', r, r.name, r.flight_no || 'Flight', `#/flights/${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT e.*, p.name AS project_name FROM experiments e LEFT JOIN projects p ON p.id = e.project_id WHERE (e.name LIKE ? OR e.objective LIKE ?)${scoped.replace('project_id', 'e.project_id')} LIMIT 30`, [like, like, ...p]).forEach(
+    (r) => push('experiment', r, r.name, 'Experiment', `#/experiments/${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT d.*, p.name AS project_name FROM datasets d LEFT JOIN projects p ON p.id = d.project_id WHERE (d.name LIKE ? OR d.notes LIKE ?)${scoped.replace('project_id', 'd.project_id')} LIMIT 40`, [like, like, ...p]).forEach(
+    (r) => push('dataset', r, r.name, `${r.points} pts`, `#/analysis?dataset=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(
+    `SELECT c.*, d.name AS dataset_name, d.project_id, p.name AS project_name FROM channels c
+     JOIN datasets d ON d.id = c.dataset_id LEFT JOIN projects p ON p.id = d.project_id
+     WHERE (c.name LIKE ? OR c.type LIKE ?)${projectId ? ' AND d.project_id = ?' : ''} LIMIT 30`,
+    [like, like, ...p],
+  ).forEach((r) => push('channel', r, r.name, `Channel in ${r.dataset_name}`, `#/analysis?dataset=${r.dataset_id}`, r.project_name));
+
+  db.all<any>(`SELECT c.*, p.name AS project_name FROM components c LEFT JOIN projects p ON p.id = c.project_id WHERE (c.name LIKE ? OR c.model LIKE ? OR c.serial LIKE ?)${scoped.replace('project_id', 'c.project_id')} LIMIT 30`, [like, like, like, ...p]).forEach(
+    (r) => push('component', r, r.name, r.model || r.category, `#/components?component=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT s.*, p.name AS project_name FROM sensors s LEFT JOIN projects p ON p.id = s.project_id WHERE (s.name LIKE ? OR s.model LIKE ? OR s.serial LIKE ?)${scoped.replace('project_id', 's.project_id')} LIMIT 30`, [like, like, like, ...p]).forEach(
+    (r) => push('sensor', r, r.name, r.type, `#/sensors?sensor=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT d.*, p.name AS project_name FROM documents d LEFT JOIN projects p ON p.id = d.project_id WHERE (d.title LIKE ? OR d.description LIKE ? OR d.tags LIKE ? OR d.original_name LIKE ?)${scoped.replace('project_id', 'd.project_id')} LIMIT 30`, [like, like, like, like, ...p]).forEach(
+    (r) => push('document', r, r.title, r.kind, `#/documents?doc=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT i.*, p.name AS project_name FROM issues i LEFT JOIN projects p ON p.id = i.project_id WHERE (i.title LIKE ? OR i.description LIKE ? OR i.investigation LIKE ?)${scoped.replace('project_id', 'i.project_id')} LIMIT 30`, [like, like, like, ...p]).forEach(
+    (r) => push('issue', r, r.title, `${r.severity} · ${r.status}`, `#/issues?issue=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT n.*, p.name AS project_name FROM notes n LEFT JOIN projects p ON p.id = n.project_id WHERE (n.title LIKE ? OR n.body LIKE ?)${scoped.replace('project_id', 'n.project_id')} LIMIT 30`, [like, like, ...p]).forEach(
+    (r) => push('note', r, r.title, 'Engineering note', `#/development?note=${r.id}`, r.project_name),
+  );
+
+  db.all<any>(`SELECT r.*, p.name AS project_name FROM reports r LEFT JOIN projects p ON p.id = r.project_id WHERE r.title LIKE ?${scoped.replace('project_id', 'r.project_id')} LIMIT 20`, [like, ...p]).forEach(
+    (r) => push('report', r, r.title, 'Report', `#/reports?report=${r.id}`, r.project_name),
+  );
+
+  const seen = new Set<string>();
+  return hits
+    .filter((h) => {
+      const key = `${h.type}:${h.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+/* ------------------------------------------------------------------ */
+/* Project overview and relationship graph                             */
+/* ------------------------------------------------------------------ */
+
+export function projectOverview(projectId: string): any {
+  const db = getDb();
+  const project = db.get<any>('SELECT * FROM projects WHERE id = ?', [projectId]);
+  if (!project) throw new Error('Project not found');
+
+  const rockets = db.all<any>('SELECT * FROM rockets WHERE project_id = ? ORDER BY created_at', [projectId]);
+  const revisions = db.all<any>('SELECT * FROM revisions WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const stages = db.all<any>('SELECT * FROM stages WHERE project_id = ? ORDER BY sort_order', [projectId]);
+  const campaigns = db.all<any>('SELECT * FROM campaigns WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const tests = db.all<any>('SELECT * FROM tests WHERE project_id = ? ORDER BY COALESCE(NULLIF(performed_at,\'\'),\'0\') DESC LIMIT 100', [projectId]);
+  const flights = db.all<any>('SELECT * FROM flights WHERE project_id = ? ORDER BY COALESCE(NULLIF(performed_at,\'\'),\'0\') DESC LIMIT 100', [projectId]);
+  const experiments = db.all<any>('SELECT * FROM experiments WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const datasets = db.all<any>('SELECT * FROM datasets WHERE project_id = ? ORDER BY created_at DESC LIMIT 100', [projectId]);
+  const issues = db.all<any>('SELECT * FROM issues WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const activity = db.all<any>('SELECT * FROM activity WHERE project_id = ? ORDER BY at DESC LIMIT 40', [projectId]);
+  const documents = db.all<any>('SELECT * FROM documents WHERE project_id = ? ORDER BY created_at DESC LIMIT 50', [projectId]);
+  const notes = db.all<any>('SELECT * FROM notes WHERE project_id = ? ORDER BY created_at DESC LIMIT 50', [projectId]);
+  const components = db.all<any>('SELECT * FROM components WHERE project_id = ? ORDER BY category, name', [projectId]);
+  const sensors = db.all<any>('SELECT * FROM sensors WHERE project_id = ? ORDER BY name', [projectId]);
+  const reports = db.all<any>('SELECT * FROM reports WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  const configs = db.all<any>('SELECT * FROM electronics_configs WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+
+  return {
+    project: expandOne(project),
+    rockets,
+    revisions,
+    stages,
+    campaigns,
+    tests,
+    flights,
+    experiments,
+    datasets,
+    issues,
+    activity,
+    documents,
+    notes,
+    components,
+    sensors,
+    reports,
+    configs,
+    counts: {
+      rockets: rockets.length,
+      revisions: revisions.length,
+      tests: tests.length,
+      flights: flights.length,
+      experiments: experiments.length,
+      datasets: datasets.length,
+      openIssues: issues.filter((i) => !['Resolved', 'Verified', 'Closed', "Won't fix"].includes(i.status)).length,
+      components: components.length,
+      sensors: sensors.length,
+      documents: documents.length,
+      reports: reports.length,
+    },
+  };
+}
+
+/** Everything directly attached to a record — powers linked-record navigation. */
+export function linkedRecords(entityType: string, entityId: string): any {
+  const db = getDb();
+  const out: any = { documents: [], notes: [], issues: [], datasets: [], events: [], activity: [] };
+  const id = entityId;
+  const projectId =
+    entityType === 'project'
+      ? id
+      : db.get<any>(`SELECT project_id FROM ${tableFor(entityType)} WHERE id = ?`, [id])?.project_id ?? '';
+
+  out.documents = db.all<any>('SELECT * FROM documents WHERE entity_type = ? AND entity_id = ?', [entityType, id]);
+  out.notes = db.all<any>('SELECT * FROM notes WHERE entity_type = ? AND entity_id = ?', [entityType, id]);
+  const issueClauses: string[] = [];
+  const issueParams: any[] = [];
+  const issueField: Record<string, string> = { revision: 'revision_id', test: 'test_id', flight: 'flight_id', dataset: 'dataset_id' };
+  if (issueField[entityType]) {
+    issueClauses.push(`${issueField[entityType]} = ?`);
+    issueParams.push(id);
+  }
+  if (entityType === 'project') {
+    issueClauses.push('project_id = ?');
+    issueParams.push(id);
+  }
+  if (issueClauses.length) out.issues = db.all<any>(`SELECT * FROM issues WHERE ${issueClauses.join(' OR ')}`, issueParams);
+
+  if (entityType === 'test') out.datasets = db.all<any>('SELECT * FROM datasets WHERE test_id = ?', [id]);
+  if (entityType === 'flight') out.datasets = db.all<any>('SELECT * FROM datasets WHERE flight_id = ?', [id]);
+  if (entityType === 'run') out.datasets = db.all<any>('SELECT * FROM datasets WHERE run_id = ?', [id]);
+  if (entityType === 'project') out.datasets = db.all<any>('SELECT * FROM datasets WHERE project_id = ? ORDER BY created_at DESC', [id]);
+  if (out.datasets.length) {
+    out.events = db.all<any>(
+      `SELECT * FROM events WHERE dataset_id IN (${out.datasets.map(() => '?').join(',')}) ORDER BY t`,
+      out.datasets.map((d: any) => d.id),
+    );
+  }
+  out.activity = projectId
+    ? db.all<any>('SELECT * FROM activity WHERE project_id = ? ORDER BY at DESC LIMIT 50', [projectId])
+    : [];
+
+  if (entityType === 'dataset') {
+    const dataset = db.get<any>('SELECT * FROM datasets WHERE id = ?', [id]);
+    out.dataset = expandOne(dataset);
+    if (dataset?.source_dataset_id) out.sourceDataset = expandOne(db.get<any>('SELECT * FROM datasets WHERE id = ?', [dataset.source_dataset_id]));
+    out.derived = db.all<any>('SELECT * FROM datasets WHERE source_dataset_id = ?', [id]);
+    out.channels = db.all<any>('SELECT * FROM channels WHERE dataset_id = ?', [id]);
+  }
+  return out;
+}

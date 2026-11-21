@@ -1,0 +1,57 @@
+appId: com.rocketlab.desktop
+productName: Rocket Lab
+copyright: Copyright © 2026 Rocket Lab
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+asar: true
+asarUnpack: []
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: RocketLab-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Rocket Lab
+  deleteAppDataOnUninstall: false
+  differentialPackage: true
+  runAfterFinish: true
+linux:
+  icon: build/icon.png
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Science
+  maintainer: Rocket Lab <engineering@rocketlab.local>
+  artifactName: RocketLab-${version}-${arch}.${ext}
+mac:
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  artifactName: RocketLab-${version}-${arch}.${ext}
+dmg:
+  title: Rocket Lab ${version}
+publish:
+  provider: github
+  owner: YOUR-GITHUB-USERNAME
+  repo: rocket-lab
+  releaseType: release

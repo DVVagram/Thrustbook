@@ -1,0 +1,40 @@
+{
+  "name": "rocket-lab",
+  "productName": "Rocket Lab",
+  "version": "1.0.1",
+  "description": "Rocket Development, Testing & Engineering Analysis Platform",
+  "author": {
+    "name": "Rocket Lab",
+    "email": "engineering@rocketlab.local"
+  },
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:app": "node scripts/build.mjs",
+    "build": "npm run build:app && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  }
+}
