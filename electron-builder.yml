@@ -52,6 +52,6 @@ dmg:
   title: Rocket Lab ${version}
 publish:
   provider: github
-  owner: YOUR-GITHUB-USERNAME
+  owner: DVVagram
   repo: rocket-lab
   releaseType: release
