@@ -253,5 +253,9 @@ try {
     stopApp(child);
     await sleep(500);
   }
-  rmSync(tempRoot, { recursive: true, force: true });
+  try {
+    rmSync(tempRoot, { recursive: true, force: true });
+  } catch {
+    // A locked temporary profile must not turn a passing layout check into a failure.
+  }
 }
