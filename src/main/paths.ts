@@ -22,6 +22,11 @@ export interface StorageConfig {
 
 let cached: StorageConfig | null = null;
 
+/** New THRUSTBOOK_* variables, with the original ROCKETLAB_* names kept working. */
+function envOverride(name: string): string | undefined {
+  return process.env[`THRUSTBOOK_${name}`] ?? process.env[`ROCKETLAB_${name}`];
+}
+
 export type WorkspaceMode = 'user' | 'examples';
 
 function pointerFile(): string {
@@ -38,8 +43,9 @@ function workspaceFile(): string {
  * chosen before the database connection is created.
  */
 export function examplesRoot(): string {
-  return process.env.ROCKETLAB_EXAMPLES_ROOT
-    ? path.resolve(process.env.ROCKETLAB_EXAMPLES_ROOT)
+  const examplesOverride = envOverride('EXAMPLES_ROOT');
+  return examplesOverride
+    ? path.resolve(examplesOverride)
     : path.join(app.getPath('userData'), 'examples');
 }
 
@@ -47,7 +53,7 @@ let modeCache: WorkspaceMode | null = null;
 
 export function workspaceMode(): WorkspaceMode {
   if (modeCache) return modeCache;
-  const envMode = process.env.ROCKETLAB_WORKSPACE;
+  const envMode = envOverride('WORKSPACE');
   if (envMode === 'examples' || envMode === 'user') {
     modeCache = envMode;
     return modeCache;
@@ -79,7 +85,8 @@ export function readStorageConfig(): StorageConfig {
   let dataDir = fallback;
   // Explicit override for QA/portable deployments; the pointer file remains the
   // normal way the storage location is chosen.
-  if (process.env.ROCKETLAB_DATA_DIR) dataDir = path.resolve(process.env.ROCKETLAB_DATA_DIR);
+  const dataOverride = envOverride('DATA_DIR');
+  if (dataOverride) dataDir = path.resolve(dataOverride);
   try {
     if (fs.existsSync(file)) {
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));

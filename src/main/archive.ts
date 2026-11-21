@@ -229,7 +229,7 @@ export async function createBackup(label = '', kind: BackupInfo['kind'] = 'manua
     /* checkpoint is best effort */
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const name = `rocketlab-${kind}-${stamp}${label ? `-${safeFileName(label)}` : ''}.rlbak`;
+  const name = `thrustbook-${kind}-${stamp}${label ? `-${safeFileName(label)}` : ''}.rlbak`;
   const file = path.join(backupsDir(), name);
 
   const counts: Record<string, number> = {};
@@ -304,7 +304,7 @@ export async function inspectBackup(file: string): Promise<{ valid: boolean; man
     const manifestPath = path.join(tempDir, 'manifest.json');
     if (!fs.existsSync(manifestPath)) return { valid: false, error: 'Archive has no manifest' };
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (manifest.format !== 'rocketlab-backup') return { valid: false, error: 'Not a Rocket Lab backup' };
+    if (manifest.format !== 'rocketlab-backup') return { valid: false, error: 'Not a Thrustbook backup' };
     const dbPath = path.join(tempDir, 'data', 'rocketlab.db');
     if (!fs.existsSync(dbPath)) return { valid: false, error: 'Archive has no database' };
     return { valid: true, manifest };
@@ -574,7 +574,7 @@ export async function importProject(archivePath: string, options: { rename?: str
     const manifestPath = path.join(tempDir, 'project.json');
     if (!fs.existsSync(manifestPath)) throw new Error('Archive does not contain a project export manifest');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (manifest.format !== 'rocketlab-project') throw new Error('Archive is not a Rocket Lab project export');
+    if (manifest.format !== 'rocketlab-project') throw new Error('Archive is not a Thrustbook project export');
 
     const tables: Record<string, any[]> = manifest.tables ?? {};
     const idMap = new Map<string, string>();

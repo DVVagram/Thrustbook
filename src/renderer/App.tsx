@@ -304,7 +304,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="splash">
-        <div className="splash-brand">ROCKET LAB</div>
+        <div className="splash-brand">THRUSTBOOK</div>
         <div className="spinner" />
         <div className="muted small">Opening engineering database…</div>
       </div>
@@ -322,7 +322,7 @@ export default function App() {
             </svg>
           </div>
           <div>
-            <div className="brand-name">ROCKET LAB</div>
+            <div className="brand-name">THRUSTBOOK</div>
             <div className="brand-sub">Development & Test Platform</div>
           </div>
         </div>

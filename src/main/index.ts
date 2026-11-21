@@ -3,6 +3,7 @@ import { app, BrowserWindow, Menu, shell, session } from 'electron';
 import { getSetting, closeDatabase, openDatabase, schemaVersion } from './db';
 import { ensureStorage, dataDir, workspaceMode } from './paths';
 import { ensureExamplesWorkspace } from './examples';
+import { migrateLegacyUserData } from './migrate';
 import { registerIpc } from './ipc';
 import { createBackup, listBackups } from './archive';
 import { APP_NAME } from '../shared/constants';
@@ -212,7 +213,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    app.setAppUserModelId('com.rocketlab.desktop');
+    app.setAppUserModelId('com.thrustbook.desktop');
+    migrateLegacyUserData();
     ensureStorage();
     try {
       openDatabase();

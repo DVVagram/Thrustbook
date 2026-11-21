@@ -1,4 +1,4 @@
-export const APP_NAME = 'Rocket Lab';
+export const APP_NAME = 'Thrustbook';
 export const APP_TAGLINE = 'Rocket Development, Testing & Engineering Analysis Platform';
 
 export const PROJECT_STATUSES = ['Planning', 'In development', 'Testing', 'Flight campaign', 'On hold', 'Complete', 'Archived'];

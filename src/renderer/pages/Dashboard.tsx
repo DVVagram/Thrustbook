@@ -79,7 +79,7 @@ export default function Dashboard() {
             <Button variant="primary" icon="plus" onClick={() => navigate('#/projects?new=1')}>
               Create first project
             </Button>
-            <Button icon="folder" onClick={() => api.pickOpen({ title: 'Import a project archive', filters: [{ name: 'Rocket Lab project', extensions: ['rlproj'] }] })}>
+            <Button icon="folder" onClick={() => api.pickOpen({ title: 'Import a project archive', filters: [{ name: 'Thrustbook project', extensions: ['rlproj'] }] })}>
               Import project archive
             </Button>
           </div>

@@ -485,7 +485,7 @@ const handlers: Record<string, Handler> = {
   'backup.inspect': (payload: any) => inspectBackup(assertAuthorisedPath(payload?.file)),
   'backup.pickAndRestore': async (payload: any, win) => {
     const picked = await handlePickOpen(
-      { title: 'Select a Rocket Lab backup', filters: [{ name: 'Rocket Lab backup', extensions: ['rlbak'] }] },
+      { title: 'Select a Thrustbook backup', filters: [{ name: 'Thrustbook backup', extensions: ['rlbak'] }] },
       win,
     );
     if (picked.canceled || !picked.paths[0]) return { canceled: true };
@@ -499,7 +499,7 @@ const handlers: Record<string, Handler> = {
       {
         title: 'Export project',
         defaultName: `${safeFileName(project.code || project.name)}.rlproj`,
-        filters: [{ name: 'Rocket Lab project', extensions: ['rlproj'] }],
+        filters: [{ name: 'Thrustbook project', extensions: ['rlproj'] }],
       },
       win,
     );
@@ -513,7 +513,7 @@ const handlers: Record<string, Handler> = {
       return result;
     }
     const picked = await handlePickOpen(
-      { title: 'Import project archive', filters: [{ name: 'Rocket Lab project', extensions: ['rlproj'] }] },
+      { title: 'Import project archive', filters: [{ name: 'Thrustbook project', extensions: ['rlproj'] }] },
       win,
     );
     if (picked.canceled || !picked.paths[0]) return { canceled: true };

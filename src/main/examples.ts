@@ -68,7 +68,7 @@ async function seedExampleProgramme(): Promise<void> {
     name: EXAMPLE_PROJECT_NAME,
     code: 'EX-K1',
     description:
-      'Bundled example data for Rocket Lab. This programme, its tests, flights and recordings are fictional and exist only to demonstrate the workflow. They live in a separate workspace from your own projects.',
+      'Bundled example data for Thrustbook. This programme, its tests, flights and recordings are fictional and exist only to demonstrate the workflow. They live in a separate workspace from your own projects.',
     objectives:
       'Demonstrate revision tracking, ground and flight testing, imported recordings, comparison and reporting using realistic but entirely synthetic measurements.',
     status: 'Active',

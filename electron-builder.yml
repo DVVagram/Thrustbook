@@ -1,6 +1,6 @@
-appId: com.rocketlab.desktop
-productName: Rocket Lab
-copyright: Copyright © 2026 Rocket Lab
+appId: com.thrustbook.desktop
+productName: Thrustbook
+copyright: Copyright © 2026 Thrustbook
 directories:
   output: release
   buildResources: build
@@ -15,7 +15,7 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  artifactName: RocketLab-Setup-${version}-${arch}.${ext}
+  artifactName: Thrustbook-Setup-${version}-${arch}.${ext}
 nsis:
   oneClick: false
   perMachine: false
@@ -23,7 +23,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Rocket Lab
+  shortcutName: Thrustbook
   deleteAppDataOnUninstall: false
   differentialPackage: true
   runAfterFinish: true
@@ -35,8 +35,8 @@ linux:
     - target: deb
       arch: [x64]
   category: Science
-  maintainer: Rocket Lab <engineering@rocketlab.local>
-  artifactName: RocketLab-${version}-${arch}.${ext}
+  maintainer: Thrustbook <engineering@rocketlab.local>
+  artifactName: Thrustbook-${version}-${arch}.${ext}
 mac:
   icon: build/icon.png
   target:
@@ -47,11 +47,11 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  artifactName: RocketLab-${version}-${arch}.${ext}
+  artifactName: Thrustbook-${version}-${arch}.${ext}
 dmg:
-  title: Rocket Lab ${version}
+  title: Thrustbook ${version}
 publish:
   provider: github
   owner: DVVagram
-  repo: rocket-lab
+  repo: thrustbook
   releaseType: release

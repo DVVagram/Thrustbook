@@ -37,4 +37,4 @@ const api = {
 
 contextBridge.exposeInMainWorld('rocketlab', api);
 
-export type RocketLabApi = typeof api;
+export type ThrustbookApi = typeof api;

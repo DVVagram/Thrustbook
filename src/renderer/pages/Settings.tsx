@@ -601,7 +601,7 @@ export default function SettingsPage() {
           <Panel title="Release feed configuration">
             <div className="stack">
               <Field label="GitHub repository" hint="owner/repository used for release checks">
-                <Input value={repoDraft} onChange={(e) => setRepoDraft(e.target.value)} placeholder="my-org/rocket-lab" />
+                <Input value={repoDraft} onChange={(e) => setRepoDraft(e.target.value)} placeholder="my-org/thrustbook" />
               </Field>
               <div className="modal-actions-row">
                 <Button
@@ -691,7 +691,7 @@ export default function SettingsPage() {
         <div className="settings-grid">
           <Panel title={APP_NAME}>
             <div className="stack">
-              <div className="about-brand">ROCKET LAB</div>
+              <div className="about-brand">THRUSTBOOK</div>
               <div className="muted">{APP_TAGLINE}</div>
               <p>
                 A local-first engineering environment for rocket development programmes: project and revision history, component and electronics records,

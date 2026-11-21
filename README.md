@@ -1,6 +1,6 @@
-# Rocket Lab — Rocket Development, Testing & Engineering Analysis Platform
+# Thrustbook — Rocket Development, Testing & Engineering Analysis Platform
 
-Rocket Lab is a standalone desktop application for managing an entire experimental rocket
+Thrustbook is a standalone desktop application for managing an entire experimental rocket
 programme: projects, rocket revisions, components, sensors, ground tests, flights, experimental
 runs, imported measurement data, analysis workspaces, dataset comparisons and PDF reports.
 
@@ -100,7 +100,7 @@ src/
 <userData>/storage.json            optional pointer to a relocated data folder
 <userData>/workspace.json          which workspace opens: { "mode": "user" | "examples" }
 <userData>/data/                   the user's own workspace
-  rocketlab.db                     metadata, schema version in PRAGMA user_version
+  rocketlab.db                     metadata, schema version (legacy filename kept for upgrades)
   datasets/<datasetId>/            original.<ext>, time.f64, ch_00.f64 …
   documents/                       uploaded attachments (original retained)
   reports/                         generated HTML + PDF
@@ -112,8 +112,14 @@ src/
 ```
 
 The storage folder can be shown, backed up, restored or moved from **Settings → Data**.
-`ROCKETLAB_DATA_DIR` overrides the location for portable or QA runs; `ROCKETLAB_WORKSPACE`
-(`user` or `examples`) and `ROCKETLAB_EXAMPLES_ROOT` override workspace selection for QA.
+`THRUSTBOOK_DATA_DIR` overrides the location for portable or QA runs; `THRUSTBOOK_WORKSPACE`
+(`user` or `examples`) and `THRUSTBOOK_EXAMPLES_ROOT` override workspace selection for QA. The
+legacy `ROCKETLAB_*` names are still accepted for existing scripts.
+
+Thrustbook was previously published as “Rocket Lab”. On first start it copies the old
+`%APPDATA%/Rocket Lab` profile into `%APPDATA%/Thrustbook`, rewrites stored dataset, document and
+report paths, and leaves the old folder untouched as a safety copy. The bundled example workspace is
+rebuilt in the new profile instead of being copied.
 
 ### Entry templates
 
@@ -167,7 +173,7 @@ If npm is configured to skip lifecycle scripts, Electron's binary must be instal
 ## 6. Packaging
 
 ```bash
-npm run dist:win     # release/RocketLab-Setup-<version>-x64.exe (NSIS)
+npm run dist:win     # release/Thrustbook-Setup-<version>-x64.exe (NSIS)
 npm run dist:linux   # AppImage + .deb
 npm run dist:mac     # DMG (x64 + arm64)
 ```
@@ -175,7 +181,7 @@ npm run dist:mac     # DMG (x64 + arm64)
 `electron-builder.yml` defines the targets. The Windows installer is per-user by default, allows
 choosing the directory, creates Start Menu and desktop shortcuts and does **not** delete application
 data on uninstall (`deleteAppDataOnUninstall: false`). Upgrading installs over the previous version
-while `%APPDATA%\Rocket Lab\data` (or the relocated folder) is preserved.
+while `%APPDATA%\Thrustbook\data` (or the relocated folder) is preserved.
 
 macOS builds are hardened-runtime signed and notarized when certificates are supplied; without
 credentials the DMG is unsigned and Gatekeeper will warn.
@@ -185,10 +191,10 @@ credentials the DMG is unsigned and Gatekeeper will warn.
 `.github/workflows/release.yml` builds all three platforms on a version tag (`v1.2.3`) and publishes
 the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
 
-1. The update feed is configured for `DVVagram/rocket-lab` in `electron-builder.yml`
+1. The update feed is configured for `DVVagram/thrustbook` in `electron-builder.yml`
    (`publish.owner` / `publish.repo`); CI overrides it from the repository context. The app can be
    pointed at another repository at runtime with the `updateRepo` setting (`owner/repo`).
-2. Push a tag: `git tag v1.1.0 && git push origin v1.1.0`.
+2. Push a tag: `git tag v2.0.0 && git push origin v2.0.0`.
 3. Approve the draft release after the artifacts are attached.
 
 Signing secrets (all optional; unsigned builds install with OS warnings):
@@ -227,23 +233,27 @@ explicitly starts the download/install, and never touch user data.
   planned run to a completed status now re-runs required-field validation (previously the check ran
   only when template values were also edited), and the global search dialog is now rendered only
   when opened (it previously sat over the application as a blocking modal on every page).
-- The example workspace was verified with separate `ROCKETLAB_DATA_DIR` and example roots: it seeded
+- The example workspace was verified with separate `THRUSTBOOK_DATA_DIR` and example roots: it seeded
   one project, two datasets, four templates, one test, one flight and two runs on first open; its
   dataset series, analysis panels and project report rendered without errors; the user workspace
   still contained only its own project and template, no example record was found by search, and
   deleting the example workspace removed only its own folder before it reseeded on the next open.
 - The NSIS installer was installed silently, launched as a packaged application (`packaged: true`),
   and then upgraded from 1.0.0 to 1.0.1 in place: the project and all three datasets were still
-  present after the upgrade. The 1.1.0 installer was installed, launched with an isolated data
-  folder, checked for templates, the example workspace and the search dialog, and uninstalled.
+  present after the upgrade. The 2.0.0 Thrustbook installer was installed, launched with an isolated
+  data folder, checked for templates, the example workspace and the search dialog, and uninstalled.
   Installers produced locally are unsigned unless signing credentials are configured.
+- The rename from Rocket Lab to Thrustbook was verified against a real legacy profile containing a
+  project, test and imported dataset: the profile was copied to `%APPDATA%/Thrustbook`, the dataset
+  and original-file paths were rewritten, the channel series still returned its samples, the legacy
+  folder remained untouched, and the renamed window, installer and report strings showed Thrustbook.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.
 
 ## 9. Safety scope
 
-Rocket Lab records, organizes and analyses measurements. It does not certify airworthiness, flight
+Thrustbook records, organizes and analyses measurements. It does not certify airworthiness, flight
 readiness, structural margins or motor safety, and it does not control launch, propulsion or
 actuation systems. Recorded values, user-entered text, derived calculations, statistics and
 algorithmic event suggestions are kept visibly distinct; correlation is never presented as proof of
