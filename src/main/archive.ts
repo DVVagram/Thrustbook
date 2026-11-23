@@ -495,12 +495,17 @@ function projectTableRows(projectId: string): Record<string, any[]> {
     'inventory_items',
     'finance_entries',
     'reports',
+    'keyframe_sets',
     'activity',
   ];
   const out: Record<string, any[]> = {};
+  // The projects table is keyed by id rather than project_id, so it needs an
+  // explicit lookup; without it the archive has no project record to import.
+  out.projects = db.all<any>('SELECT * FROM projects WHERE id = ?', [projectId]);
   const datasetIds = new Set(db.all<any>('SELECT id FROM datasets WHERE project_id = ?', [projectId]).map((d) => d.id));
   const configIds = new Set(db.all<any>('SELECT id FROM electronics_configs WHERE project_id = ?', [projectId]).map((d) => d.id));
   for (const table of tables) {
+    if (table === 'projects') continue;
     const cols = new Set(db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name));
     if (cols.has('project_id')) {
       out[table] = db.all<any>(`SELECT * FROM ${table} WHERE project_id = ?`, [projectId]);
@@ -703,10 +708,11 @@ export async function importProject(archivePath: string, options: { rename?: str
       insertRows('inventory_items', tables.inventory_items ?? []);
       insertRows('finance_entries', tables.finance_entries ?? []);
       insertRows('reports', tables.reports ?? []);
+      insertRows('keyframe_sets', tables.keyframe_sets ?? []);
       insertRows('activity', tables.activity ?? []);
       db.run(
         `INSERT INTO activity (id, project_id, entity_type, entity_id, kind, title, detail, at, tags, actor)
-         VALUES (?, ?, 'project', ?, 'import', 'Project imported', ?, ?, 'import')`,
+         VALUES (?, ?, 'project', ?, 'import', 'Project imported', ?, ?, '', 'import')`,
         [newId(), newProjectId, newProjectId, `Imported from ${path.basename(archivePath)} (exported ${manifest.exportedAt})`, importedAt],
       );
     });
