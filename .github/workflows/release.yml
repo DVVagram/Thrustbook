@@ -39,7 +39,7 @@ jobs:
       - name: Keep installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rocketlab-${{ matrix.platform }}
+          name: thrustbook-${{ matrix.platform }}
           path: |
             release/*.exe
             release/*.AppImage

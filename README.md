@@ -169,7 +169,7 @@ Requirements: Node.js 24 and npm. Electron ships its own Node runtime; end users
 
 ```bash
 npm install
-npm run dev        # Vite dev server + Electron with hot reload
+npm run dev        # Vite dev server + Electron (renderer hot reload)
 npm run typecheck  # TypeScript, no emit
 npm run build      # esbuild main/preload + Vite renderer -> dist/
 npm run check:layout  # launch an isolated app and check all main pages at 1120px
@@ -198,8 +198,10 @@ credentials the DMG is unsigned and Gatekeeper will warn.
 
 ## 7. Releases, updates and CI
 
-`.github/workflows/release.yml` builds all three platforms on a version tag (`v1.2.3`) and publishes
-the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
+`.github/workflows/check.yml` runs `npm run check` (typecheck, build and the 1120px layout audit)
+on every push to `main` and every pull request. `.github/workflows/release.yml` builds all three
+platforms on a version tag (`v1.2.3`) and publishes the installers plus `latest.yml` /
+`latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
 
 1. The update feed is configured for `DVVagram/Thrustbook` in `electron-builder.yml`
    (`publish.owner` / `publish.repo`); CI overrides it from the repository context. New profiles
@@ -207,7 +209,7 @@ the installers plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitH
    so a fresh install does not need any feed entry. The app can be pointed at another repository at
    runtime with the `updateRepo` setting (`owner/repo`).
 2. Push a tag: `git tag v2.1.1 && git push origin v2.1.1`.
-3. Approve the draft release after the artifacts are attached.
+3. The workflow publishes the release directly with all platform assets attached.
 
 Signing secrets (all optional; unsigned builds install with OS warnings):
 

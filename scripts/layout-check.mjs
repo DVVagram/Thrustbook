@@ -188,9 +188,11 @@ let cdp;
 
 try {
   const port = await freePort();
+  const electronArgs = ['.', `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`];
+  if (process.env.CI) electronArgs.push('--no-sandbox', '--disable-gpu');
   child = spawn(
     electronPath,
-    ['.', `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`],
+    electronArgs,
     {
       cwd: projectRoot,
       env: {

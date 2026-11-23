@@ -36,5 +36,3 @@ child.on('close', async () => {
   await server.close();
   process.exit(0);
 });
-
-// Re-bundle main/preload when their sources change, then relaunch Electron.
