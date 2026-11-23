@@ -33,6 +33,12 @@ const ICON_PATHS: Record<string, string> = {
   save: 'M4 4h13l3 3v13H4zM8 4v6h8V4M8 20v-6h8v6',
   refresh: 'M20 11a8 8 0 1 0-2.3 6M20 4v7h-7',
   play: 'M6 4l14 8-14 8z',
+  pause: 'M7 5h4v14H7zM13 5h4v14h-4z',
+  stop: 'M6 6h12v12H6z',
+  'step-back': 'M6 5v14M18 5l-9 7 9 7z',
+  'step-forward': 'M18 5v14M6 5l9 7-9 7z',
+  undo: 'M9 14 4 9l5-5M4 9h9a6 6 0 0 1 0 12h-3',
+  redo: 'M15 14l5-5-5-5M20 9h-9a6 6 0 0 0 0 12h3',
   warning: 'M12 3 2 21h20zM12 9v5M12 17v.5',
   check: 'M4 12l5 5L20 6',
   filter: 'M3 4h18l-7 8v7l-4 2v-9z',
@@ -42,6 +48,9 @@ const ICON_PATHS: Record<string, string> = {
   link: 'M10 13a4 4 0 0 0 6 .5l2-2a4 4 0 0 0-5.7-5.7L11 7M14 11a4 4 0 0 0-6-.5l-2 2A4 4 0 0 0 11.7 18L13 17',
   box: 'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
   wallet: 'M3 7a2 2 0 0 1 2-2h12v4M3 7v10a2 2 0 0 0 2 2h14V9H5a2 2 0 0 1-2-2zM16 13h2',
+  video: 'M3 5h12v14H3zM15 10l6-3v10l-6-3M7 9l3 3-3 3',
+  target: 'M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2',
+  camera: 'M3 7h4l2-2h6l2 2h4v12H3zM12 10a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
 };
 
 export function Icon({ name, size = 16, className = '' }: { name: string; size?: number; className?: string }) {

@@ -117,6 +117,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   entry_template: 'Entry template',
   inventory_item: 'Inventory item',
   finance_entry: 'Finance entry',
+  motion_analysis: 'Video & image analysis',
 };
 
 export const NAV_ITEMS: { key: string; label: string; group: string; icon: string }[] = [
@@ -134,6 +135,7 @@ export const NAV_ITEMS: { key: string; label: string; group: string; icon: strin
   { key: 'datalog', label: 'Data Log', group: 'Data', icon: 'log' },
   { key: 'analysis', label: 'Data Analysis', group: 'Data', icon: 'chart' },
   { key: 'compare', label: 'Dataset Comparison', group: 'Data', icon: 'compare' },
+  { key: 'motion', label: 'Video & Image Analysis', group: 'Data', icon: 'video' },
   { key: 'documents', label: 'Engineering Documentation', group: 'Records', icon: 'doc' },
   { key: 'issues', label: 'Issues & Observations', group: 'Records', icon: 'alert' },
   { key: 'reports', label: 'Reports', group: 'Records', icon: 'report' },

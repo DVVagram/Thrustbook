@@ -576,6 +576,26 @@ CREATE INDEX IF NOT EXISTS idx_finance_project ON finance_entries(project_id, oc
 CREATE INDEX IF NOT EXISTS idx_finance_kind ON finance_entries(project_id, kind, occurred_on DESC);
 `,
   },
+  {
+    version: 5,
+    name: 'video and image motion analysis projects',
+    sql: `
+CREATE TABLE IF NOT EXISTS motion_analyses (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  media_type TEXT DEFAULT 'image',
+  media_path TEXT DEFAULT '',
+  media_paths_json TEXT DEFAULT '[]',
+  data_json TEXT DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_motion_project ON motion_analyses(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motion_media ON motion_analyses(media_path);
+`,
+  },
 ];
 
 export interface Db {

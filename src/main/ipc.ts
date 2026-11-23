@@ -51,6 +51,8 @@ import {
   storageInfo,
 } from './archive';
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, updateStatus } from './updates';
+import { isKnownMediaPath, mediaUrl, rememberMediaPath } from './media';
+import { projectFileName, readMotionProjectFile, writeMotionPdf, writeTextFile } from './motion';
 import { dataDir, documentsDir, examplesRoot, isInside, safeFileName, setWorkspaceMode, uniquePath, workspaceMode } from './paths';
 import { deleteExamplesWorkspace, examplesStatus } from './examples';
 import { DEFAULT_STAGES } from '../shared/constants';
@@ -81,7 +83,10 @@ async function handlePickOpen(payload: any, win: BrowserWindow | null) {
     filters: fileFilters(payload?.filters),
   });
   if (result.canceled) return { canceled: true, paths: [] };
-  result.filePaths.forEach((p) => pickedPaths.add(path.resolve(p)));
+  result.filePaths.forEach((p) => {
+    pickedPaths.add(path.resolve(p));
+    rememberMediaPath(p);
+  });
   return { canceled: false, paths: result.filePaths };
 }
 
@@ -323,14 +328,106 @@ const handlers: Record<string, Handler> = {
     return { ok: true };
   },
 
+  'motion.mediaUrl': (payload: any) => {
+    if (typeof payload?.path !== 'string' || !payload.path.trim()) throw new Error('A media path is required');
+    const filePath = path.resolve(payload.path);
+    if (!isKnownMediaPath(filePath)) throw new Error('This media file is not referenced by a saved analysis');
+    if (!fs.existsSync(filePath)) throw new Error('The selected media file is missing. Relink it to continue.');
+    rememberMediaPath(filePath);
+    const stat = fs.statSync(filePath);
+    return { url: mediaUrl(filePath), path: filePath, size: stat.size, exists: true };
+  },
+  'motion.relinkMedia': async (payload: any, win) => {
+    const picked = await handlePickOpen(
+      {
+        title: 'Relink source media',
+        filters: [
+          {
+            name: 'Images and videos',
+            extensions: ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'mkv', 'avi', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'],
+          },
+        ],
+      },
+      win,
+    );
+    if (picked.canceled || !picked.paths[0]) return { canceled: true };
+    const filePath = picked.paths[0];
+    rememberMediaPath(filePath);
+    return { canceled: false, path: filePath, url: mediaUrl(filePath), name: path.basename(filePath) };
+  },
+  'motion.exportCsv': async (payload: any, win) => {
+    const content = String(payload?.csv ?? '');
+    if (!content.trim()) throw new Error('There is no tracking data to export');
+    const picked = await handlePickSave(
+      {
+        title: 'Export motion measurements',
+        defaultName: `${safeFileName(payload?.name ?? 'motion-measurements').replace(/\.csv$/i, '') || 'motion-measurements'}.csv`,
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      },
+      win,
+    );
+    if (picked.canceled || !picked.path) return { canceled: true };
+    writeTextFile(picked.path, content);
+    return { canceled: false, path: picked.path };
+  },
+  'motion.exportProject': async (payload: any, win) => {
+    const project = payload?.project;
+    if (!project || project.version !== 1) throw new Error('No valid analysis project to export');
+    const picked = await handlePickSave(
+      {
+        title: 'Export motion analysis project',
+        defaultName: projectFileName(payload?.name ?? project.name ?? 'motion-analysis'),
+        filters: [{ name: 'Thrustbook motion analysis', extensions: ['tbmotion'] }],
+      },
+      win,
+    );
+    if (picked.canceled || !picked.path) return { canceled: true };
+    writeTextFile(picked.path, JSON.stringify(project, null, 2));
+    return { canceled: false, path: picked.path };
+  },
+  'motion.importProject': async (payload: any, win) => {
+    let filePath = typeof payload?.file === 'string' && payload.file ? assertAuthorisedPath(payload.file) : '';
+    if (!filePath) {
+      const picked = await handlePickOpen(
+        { title: 'Import motion analysis project', filters: [{ name: 'Thrustbook motion analysis', extensions: ['tbmotion'] }] },
+        win,
+      );
+      if (picked.canceled || !picked.paths[0]) return { canceled: true };
+      filePath = picked.paths[0];
+    }
+    const result = readMotionProjectFile(filePath);
+    if (typeof result.project.media?.path === 'string') rememberMediaPath(result.project.media.path);
+    if (Array.isArray(result.project.media?.paths)) {
+      for (const p of result.project.media.paths) if (typeof p === 'string') rememberMediaPath(p);
+    }
+    return { canceled: false, path: filePath, ...result };
+  },
+  'motion.exportReport': async (payload: any, win) => {
+    const html = String(payload?.html ?? '');
+    if (!html.trim()) throw new Error('The analysis report is empty');
+    const title = String(payload?.title ?? 'Motion analysis report');
+    const picked = await handlePickSave(
+      {
+        title: 'Save motion analysis report',
+        defaultName: `${safeFileName(title).replace(/\.pdf$/i, '') || 'motion-report'}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      },
+      win,
+    );
+    if (picked.canceled || !picked.path) return { canceled: true };
+    const generated = await writeMotionPdf(html, title);
+    fs.copyFileSync(generated.pdfPath, picked.path);
+    return { canceled: false, path: picked.path, ...generated };
+  },
+
   'files.saveImage': async (payload: any, win) => {
     const dataUrl = String(payload?.dataUrl ?? '');
     const match = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
     if (!match) throw new Error('No PNG image data was provided');
     const picked = await handlePickSave(
       {
-        title: 'Export graph as image',
-        defaultName: `${safeFileName(payload?.defaultName ?? 'graph')}.png`,
+        title: String(payload?.title ?? 'Export image as PNG'),
+        defaultName: `${safeFileName(payload?.defaultName ?? 'image').replace(/\.png$/i, '') || 'image'}.png`,
         filters: [{ name: 'PNG image', extensions: ['png'] }],
       },
       win,

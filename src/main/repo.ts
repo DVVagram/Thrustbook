@@ -35,6 +35,7 @@ export const TABLES: Record<string, string> = {
   entry_template: 'entry_templates',
   inventory_item: 'inventory_items',
   finance_entry: 'finance_entries',
+  motion_analysis: 'motion_analyses',
   report: 'reports',
   activity: 'activity',
 };
@@ -420,6 +421,7 @@ export function removeRecord(entity: string, id: string): RemoveResult {
       { table: 'entry_templates', column: 'project_id' },
       { table: 'inventory_items', column: 'project_id' },
       { table: 'finance_entries', column: 'project_id' },
+      { table: 'motion_analyses', column: 'project_id' },
       { table: 'reports', column: 'project_id' },
       { table: 'activity', column: 'project_id' },
     ],
@@ -669,6 +671,10 @@ export function searchGlobal(term: string, projectId?: string): SearchHit[] {
     (r) => push('report', r, r.title, 'Report', `#/reports?report=${r.id}`, r.project_name),
   );
 
+  db.all<any>(`SELECT m.*, p.name AS project_name FROM motion_analyses m LEFT JOIN projects p ON p.id = m.project_id WHERE (m.name LIKE ? OR m.media_path LIKE ? OR m.notes LIKE ?)${projectId ? ' AND m.project_id = ?' : ''} LIMIT 20`, [like, like, like, ...p]).forEach(
+    (r) => push('motion_analysis', r, r.name, 'Video & image analysis', `#/motion?analysis=${r.id}`, r.project_name),
+  );
+
   db.all<any>(`SELECT * FROM entry_templates WHERE (name LIKE ? OR description LIKE ? OR category LIKE ?) ORDER BY updated_at DESC LIMIT 20`, [like, like, like]).forEach(
     (r) => push('entry_template', r, r.name, `Entry template · ${r.applies_to}`, `#/templates?template=${r.id}`, ''),
   );
@@ -736,6 +742,7 @@ export function projectOverview(projectId: string): any {
   const configs = db.all<any>('SELECT * FROM electronics_configs WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
   const inventory = db.all<any>('SELECT * FROM inventory_items WHERE project_id = ? ORDER BY category, name', [projectId]);
   const finance = db.all<any>('SELECT * FROM finance_entries WHERE project_id = ? ORDER BY occurred_on DESC, created_at DESC', [projectId]);
+  const motionAnalyses = db.all<any>('SELECT id, name, media_type, media_path, updated_at, created_at FROM motion_analyses WHERE project_id = ? ORDER BY updated_at DESC', [projectId]);
 
   return {
     project: expandOne(project),
@@ -757,6 +764,7 @@ export function projectOverview(projectId: string): any {
     configs,
     inventory,
     finance,
+    motionAnalyses,
     counts: {
       rockets: rockets.length,
       revisions: revisions.length,
@@ -771,6 +779,7 @@ export function projectOverview(projectId: string): any {
       reports: reports.length,
       inventoryItems: inventory.length,
       financeEntries: finance.length,
+      motionAnalyses: motionAnalyses.length,
     },
   };
 }

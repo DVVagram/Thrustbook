@@ -47,6 +47,7 @@ interface Props {
   onXDomainChange?: (domain: [number, number] | null) => void;
   markers?: ChartMarker[];
   onHoverTime?: (t: number | null) => void;
+  onPickTime?: (t: number) => void;
   showLegend?: boolean;
   note?: string;
   emptyMessage?: string;
@@ -104,6 +105,7 @@ export const Chart = forwardRef<ChartHandle, Props>(function Chart(
     onXDomainChange,
     markers,
     onHoverTime,
+    onPickTime,
     showLegend = true,
     note,
     emptyMessage = 'Select measurements to plot',
@@ -115,7 +117,7 @@ export const Chart = forwardRef<ChartHandle, Props>(function Chart(
   const [width, setWidth] = useState(600);
   const [hover, setHover] = useState<{ px: number; py: number } | null>(null);
   const [internalDomain, setInternalDomain] = useState<[number, number] | null>(null);
-  const dragRef = useRef<{ startX: number; domain: [number, number] } | null>(null);
+  const dragRef = useRef<{ startX: number; domain: [number, number]; moved: boolean } | null>(null);
   const frameRef = useRef(0);
 
   const isCategorical = type === 'histogram' || type === 'distribution' || type === 'box' || type === 'bar';
@@ -641,7 +643,7 @@ export const Chart = forwardRef<ChartHandle, Props>(function Chart(
     if (isCategorical) return;
     const base = xDomain ?? (prepared ? [prepared.min, prepared.max] : null);
     if (!base) return;
-    dragRef.current = { startX: e.clientX, domain: base };
+    dragRef.current = { startX: e.clientX, domain: base, moved: false };
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -649,6 +651,7 @@ export const Chart = forwardRef<ChartHandle, Props>(function Chart(
     setHover({ px: e.clientX - rect.left, py: e.clientY - rect.top });
     if (dragRef.current && xDomain) {
       const delta = e.clientX - dragRef.current.startX;
+      if (Math.abs(delta) > 3) dragRef.current.moved = true;
       const marginLeft = 58;
       const plotW = Math.max(10, width - marginLeft - (dualAxis ? 54 : 14));
       const shift = (-delta / plotW) * (dragRef.current.domain[1] - dragRef.current.domain[0]);
@@ -663,8 +666,16 @@ export const Chart = forwardRef<ChartHandle, Props>(function Chart(
     }
   };
 
-  const onMouseUp = () => {
+  const onMouseUp = (e: React.MouseEvent) => {
+    const drag = dragRef.current;
     dragRef.current = null;
+    if (drag && !drag.moved && onPickTime && xDomain && !isCategorical) {
+      const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+      const marginLeft = 58;
+      const plotW = Math.max(10, width - marginLeft - (dualAxis ? 54 : 14));
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left - marginLeft) / plotW));
+      onPickTime(xDomain[0] + frac * (xDomain[1] - xDomain[0]));
+    }
   };
 
   return (

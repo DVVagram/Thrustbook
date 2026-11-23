@@ -35,6 +35,9 @@ jobs:
       - name: Package and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Semantic-version pre-release tags (for example v2.2.0-beta.1)
+          # publish as GitHub prereleases and stay off the stable update feed.
+          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
         run: npx electron-builder --${{ matrix.platform }} --publish always
       - name: Keep installers as workflow artifacts
         uses: actions/upload-artifact@v7

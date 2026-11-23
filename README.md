@@ -30,6 +30,7 @@ Supported targets: Windows 10/11 x64 (NSIS `.exe`), Linux x64 (AppImage and `.de
 | Data Log | Unified chronological timeline, table view, project/test/flight/revision/measurement history, full-text search |
 | Data Analysis | Multi-panel interactive graphs, linked time range, unit conversion, statistics, event markers, saved workspaces |
 | Dataset Comparison | Multi-dataset overlay, side-by-side, difference, percentage difference, distributions, alignment and paired statistics |
+| Video & Image Analysis | Import video, still images or image sequences; manually outline objects; OpenCV optical-flow tracking with correction; calibration, 2D motion measurements, graphs, CSV/PDF/project exports |
 | Engineering Documentation | Document library with checksums, previews, tags and links to any record |
 | Issues & Observations | Issue lifecycle, severity, investigation and verification links |
 | Reports | Ten report kinds rendered to HTML and PDF, with recorded/derived content separated |
@@ -55,11 +56,14 @@ src/
     reports.ts     report builders + printToPDF
     archive.ts     streaming tar.gz backups, project export/import, integrity checks
     importers.ts   CSV/TSV/TXT/JSON/XLSX readers and header/type detection
+    media.ts       authorised, range-capable thrustbook-media:// protocol for source footage
+    motion.ts      motion-project validation, PDF report and export writers
     updates.ts     electron-updater integration
     paths.ts       user-data layout and path containment
   preload/     contextBridge surface (no Node access for the UI)
   renderer/    React 19 + TypeScript UI (Vite build)
     Chart.tsx      custom canvas chart engine (no chart dependency)
+    motion/        tracker worker/client, frame source, canvas overlay, calibration, report
     pages/         one page per module
   shared/      units, statistics, constants, types shared by both processes
 ```
@@ -73,6 +77,12 @@ src/
 - **Charts** are drawn on canvas by the application (line, scatter, area, bar, histogram,
   distribution, box, XY, difference, percentage difference, multi-axis, zoom/pan, markers, PNG
   export, downsampling indicator).
+- **Video & Image Analysis** uses a classic Web Worker for the embedded-WASM OpenCV.js build,
+  because compiling that build on the UI thread freezes the renderer. Tracking frames are transferred
+  as `ImageData` buffers; only one frame is decoded/held in the renderer at a time.
+- **Source media** is delivered through `thrustbook-media://local/<base64url-path>`, which only serves
+  a path chosen in a file dialog this session or referenced by a saved motion analysis. It supports
+  HTTP Range requests and CORS so canvas processing is not tainted. Original files are never changed.
 
 ## 3. Data integrity rules
 
@@ -172,8 +182,12 @@ npm install
 npm run dev        # Vite dev server + Electron (renderer hot reload)
 npm run typecheck  # TypeScript, no emit
 npm run build      # esbuild main/preload + Vite renderer -> dist/
+npm run test:motion    # 23 deterministic measurement/calibration/tracking-merge tests
+npm run test:stage     # canvas overlay, viewport and pointer-coordinate tests
+npm run test:tracker   # Electron + OpenCV worker translation/rotation/correction test
+npm run test:page      # Electron page smoke test: load, keyframes, history and overlay
 npm run check:layout  # launch an isolated app and check all main pages at 1120px
-npm run check      # typecheck + build + layout check
+npm run check      # measurement/stage/tracker tests, typecheck, build, page test, layout check
 npm start          # build, then launch the packaged runtime locally
 ```
 
@@ -277,11 +291,28 @@ explicitly starts the download/install, and never touch user data.
   and finance tables, project cards with active and archived states, every Settings tab and the main
   tabbed pages. Project action buttons now use full labels instead of fixed-width icon buttons, so
   Export, Archive/Restore and Delete no longer overlap. No other clipping or control overlap was found.
-- `npm run check` now runs that layout guard automatically after typecheck and build. It launches
-  Electron with an isolated profile and the example workspace, walks all 19 main pages at the 1120px
-  minimum width, and fails on button text that escapes its control or visible controls that overlap.
+- `npm run check` now runs the layout guard automatically after typecheck, build and the page test.
+  It launches Electron with an isolated profile and the example workspace, walks all 20 main pages
+  at the 1120px minimum width, and fails on button text that escapes its control or visible controls
+  that overlap.
   The detector was verified against the original defect by injecting the old 24px Export button: the
   check failed with `projects: button text overflow`; the current UI passes all pages.
+- The motion engine has 23 deterministic tests (`npm run test:motion`) covering stationary,
+  horizontal, vertical and diagonal motion, distance versus displacement, acceleration, variable
+  frame timing, rotated axes, inches, homography, invalid calibration, relative length, orientation,
+  angular velocity, foreshortening, geometry, CSV, uncertain status, keyframe segmentation, merge
+  preservation, camera-translation compensation and report content/escaping. The Electron worker
+  harness (`npm run test:tracker`) tracks a synthetic translating object (last centroid ≈ 174 px
+  against the expected 176 px), a rotating object, stops before a protected manual-correction frame,
+  merges two keyframe intervals, and measures a synthetic camera translation of ≈ 1.93 px/frame
+  against 2 px/frame with 30/30 valid background estimates. The page test (`npm run test:page`)
+  loads a saved analysis, restores a keyframe history entry and seeks the video, adds/deletes a
+  keyframe, verifies auto-save persistence and toggles the outline overlay.
+- A packaged-runtime integration check created an image-sequence analysis, waited for the worker
+  engine to become ready, drew an outline programmatically through the stored project, clicked Track,
+  and received 30 tracked frames with no renderer errors. This exercised the production CSP,
+  `thrustbook-media://` CORS/range path and the UI-to-worker pipeline. It is a local development
+  check, not part of `npm run check`.
 
 Release installers are attached to the GitHub Releases page by the Release workflow; the `.exe`,
 `.AppImage`, `.deb` and `.dmg` assets are published from the tag build.
@@ -307,6 +338,54 @@ causation and no design change is automatically credited with a measured differe
 | `Ctrl/Cmd + Shift + L` | Toggle light/dark theme |
 | `Ctrl/Cmd + ,` | Settings |
 
-## 11. License
+## 11. Video & Image Analysis
+
+Open **Video & Image Analysis** from the sidebar. Analyses belong to the selected project.
+
+1. **Import** a video, image or image sequence. Video metadata is read from the decoded file; frame
+   timing is retrieved from decoded frame timestamps when available, or entered manually. The app
+   never silently assumes an FPS: tracking stays disabled until timing is known.
+2. **Define an object.** Draw a polygon or rectangle on a paused frame. Drag points to correct them,
+   insert/delete points, undo/redo, then apply the outline. Add named reference points such as Nose
+   and Tail, and enter known length/width/height. Objects are independent and keep their own outline,
+   references, correction history and settings.
+3. **Track and keyframe.** Click *Track … through keyframes*. A classic Web Worker loads OpenCV.js
+   in the background so the interface stays responsive. Tracking uses pyramidal Lucas–Kanade optical
+   flow, forward–backward validation, a robust similarity fit (translation, rotation and uniform
+   scale) and feature re-detection. Corrections are keyframes: tracking reinitialises from each
+   saved keyframe, runs to the next one, and preserves every manual correction and every frame
+   outside the recalculated interval. Keyframes can be confirmed, reviewed and deleted; replaced or
+   deleted keyframes are retained in a correction history and can be restored. Each frame records a
+   heuristic quality score and notes. If the object is lost the run stops; it does not invent a
+   position.
+4. **Calibrate.** Set an origin and X/Y axes directly on the image, then calibrate with two points of
+   known distance or four points forming a planar homography. Supported length units include mm, cm,
+   m, in and ft. The active model is shown; a pixel scale is never presented as valid across depth
+   changes.
+5. **Analyse.** The measurement engine derives horizontal/vertical position, displacement, path
+   distance, speed, velocity components and magnitude, acceleration, travel direction, projected
+   orientation and angular velocity. Raw and smoothed series remain separate. Graphs, the video
+   timeline and overlays are synchronised. Optional camera-motion compensation estimates
+   background translation from features outside the object and subtracts it before measurement.
+   Missing background estimates disable compensation rather than being silently treated as zero.
+6. **Export.** CSV includes frame, time, pixels, calibrated values, quality, status, units and camera
+   compensation columns. PDF reports include project/media information, object and calibration
+   details, keyframes, camera status, graphs, an annotated frame, assumptions and limitations. The
+   current annotated frame can also be saved as PNG. A versioned `.tbmotion` JSON project can be
+   reopened; missing media can be relinked without losing tracking data.
+
+**Measurement meaning.** Values are calibrated only when a scale/homography is active and the
+measuring plane matches the calibration plane. Without one, values are image-plane pixel quantities.
+Object-length ratios are relative measurements, not absolute distance. A single ordinary video is a
+2D projection: no 3D coordinates, camera mounting angle or lens distortion correction is invented.
+Foreshortening estimates use the stated orthographic assumption and are shown as an estimate.
+Tracking quality is a heuristic score, not a calibrated probability. Camera compensation removes
+estimated **background translation only**; camera zoom, rotation, rolling shutter and parallax are not
+corrected. Annotated-video export and bundled FFmpeg are not implemented; video decoding and
+timestamps use the Chromium media stack.
+
+Third-party components, versions and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## 12. License
 
 Thrustbook is released under the MIT License. See [LICENSE](LICENSE).

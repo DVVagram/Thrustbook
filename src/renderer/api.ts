@@ -48,7 +48,7 @@ export const api = {
   reveal: (path: string) => call('files.reveal', { path }),
   openPath: (path: string) => call('files.openPath', { path }),
   openExternal: (url: string) => call('files.openExternal', { url }),
-  saveImage: (dataUrl: string, defaultName: string) => call<any>('files.saveImage', { dataUrl, defaultName }),
+  saveImage: (dataUrl: string, defaultName: string, title = 'Export image as PNG') => call<any>('files.saveImage', { dataUrl, defaultName, title }),
 
   uploadDocuments: (payload: any) => call<any[]>('documents.upload', payload),
   importConfigFile: (payload: any) => call<any>('configs.importFile', payload),
@@ -113,6 +113,13 @@ export const api = {
   storage: () => call<any>('storage.info'),
   integrity: () => call<any>('storage.integrity'),
   moveStorage: () => call<any>('storage.move'),
+
+  motionMediaUrl: (path: string) => call<any>('motion.mediaUrl', { path }),
+  relinkMedia: () => call<any>('motion.relinkMedia'),
+  exportMotionCsv: (name: string, csv: string) => call<any>('motion.exportCsv', { name, csv }),
+  exportMotionProject: (project: any, name?: string) => call<any>('motion.exportProject', { project, name }),
+  importMotionProject: (file?: string) => call<any>('motion.importProject', { file }),
+  exportMotionReport: (title: string, html: string) => call<any>('motion.exportReport', { title, html }),
 
   updateStatus: () => call<any>('updates.status'),
   checkUpdates: () => call<any>('updates.check'),

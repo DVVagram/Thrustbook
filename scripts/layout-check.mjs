@@ -23,6 +23,7 @@ const PAGES = [
   'experiments',
   'datalog',
   'analysis',
+  'motion',
   'compare',
   'documents',
   'issues',

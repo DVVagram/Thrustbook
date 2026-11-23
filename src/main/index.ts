@@ -6,7 +6,10 @@ import { ensureExamplesWorkspace } from './examples';
 import { migrateLegacyUserData } from './migrate';
 import { registerIpc } from './ipc';
 import { createBackup, listBackups } from './archive';
+import { installMediaProtocol, registerMediaScheme } from './media';
 import { APP_NAME } from '../shared/constants';
+
+registerMediaScheme();
 
 const isDev = !app.isPackaged;
 const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -188,8 +191,8 @@ function buildMenu(): void {
 
 function applyContentSecurityPolicy(): void {
   const csp = isDev
-    ? "default-src 'self' http://localhost:5273; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5273; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:5273 ws://localhost:5273"
-    : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+    ? "default-src 'self' http://localhost:5273 thrustbook-media:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' http://localhost:5273; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: thrustbook-media:; media-src 'self' blob: thrustbook-media:; font-src 'self' data:; connect-src 'self' http://localhost:5273 ws://localhost:5273 thrustbook-media:"
+    : "default-src 'self' thrustbook-media:; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: thrustbook-media:; media-src 'self' blob: thrustbook-media:; font-src 'self' data:; connect-src 'self' thrustbook-media:; object-src 'none'; base-uri 'none'; form-action 'none'";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -223,6 +226,7 @@ if (!gotLock) {
     } catch (err) {
       console.error('Database startup failed', err);
     }
+    installMediaProtocol();
     applyContentSecurityPolicy();
     registerIpc();
     buildMenu();

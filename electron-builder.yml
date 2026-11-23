@@ -9,6 +9,10 @@ files:
   - package.json
   - "!**/*.map"
 asar: true
+extraResources:
+  - THIRD_PARTY_NOTICES.md
+  - THIRD_PARTY_LICENSES/**/*
+  - LICENSE
 asarUnpack: []
 win:
   icon: build/icon.png
