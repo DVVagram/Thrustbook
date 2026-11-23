@@ -196,7 +196,10 @@ export function list(entity: string, opts: ListOptions = {}): any[] {
     }
   }
 
-  const orderCol = opts.orderBy && cols.has(opts.orderBy) ? opts.orderBy : cols.has('updated_at') ? 'updated_at' : 'created_at';
+  // Not every table has created_at (activity rows use `at`), so fall back through
+  // the columns that actually exist instead of assuming one.
+  const orderCol =
+    [opts.orderBy, 'updated_at', 'created_at', 'at', 'occurred_on', 'started_at', 'id'].find((column) => column && cols.has(column)) ?? 'id';
   const direction = opts.order === 'asc' ? 'ASC' : 'DESC';
   const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000));
   const offset = Math.max(0, opts.offset ?? 0);
