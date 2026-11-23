@@ -306,3 +306,7 @@ causation and no design change is automatically credited with a measured differe
 | `Ctrl/Cmd + 1…5` | Dashboard, Projects, Data Log, Analysis, Comparison |
 | `Ctrl/Cmd + Shift + L` | Toggle light/dark theme |
 | `Ctrl/Cmd + ,` | Settings |
+
+## 11. License
+
+Thrustbook is released under the MIT License. See [LICENSE](LICENSE).
