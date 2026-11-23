@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, onSam2Progress } from '../api';
 import { useApp, useAsync } from '../state';
 import { Badge, Button, Checkbox, DataTable, EmptyState, Field, Icon, Input, Modal, PageHeader, Panel, Select, Spinner, Tabs, Toolbar } from '../ui';
 import { fmtDateTime } from '../format';
@@ -30,7 +30,12 @@ import { AnalysisPanel, allObjectResults } from '../motion/AnalysisPanel';
 import { ChartHandle } from '../Chart';
 import { buildMotionReport, csvFor } from '../motion/report';
 import { createFrameSource, manualVideoTiming, probeImage, probeVideo, scanVideoTiming, seekVideo, timingLabel, videoTimingFromScan } from '../motion/media';
-import { EngineState, TrackerClient } from '../motion/trackerClient';
+import { EngineState, Sam2Client } from '../motion/sam2Client';
+import { FlowClient } from '../motion/flowClient';
+import { FLOW_MAX_GAP, buildFlowTrack, flowAxisPoints, polygonIou, samplePolygon, shouldRunSam } from '../../shared/flow';
+import type { FlowReply } from '../../shared/flow';
+import type { Sam2FrameReply } from '../../shared/sam2';
+import { SAM2_COMPONENT, Sam2Progress, Sam2Status, formatBytes } from '../../shared/sam2';
 
 const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'mkv', 'avi'];
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'];
@@ -174,6 +179,16 @@ function maxFrameOf(analysis: MotionAnalysis): number {
   return Math.max(0, frameCountOf(analysis) - 1);
 }
 
+function formatDuration(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms) || ms <= 0) return '';
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return `${minutes} min ${String(seconds).padStart(2, '0')} s`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
 function makeTrackFrame(object: MotionObject, frame: number, time: number, polygon: MotionPoint[], references: MotionReferencePoint[]): TrackFrame {
   const existing = object.frames.find((f) => f.frame === frame);
   return {
@@ -188,6 +203,7 @@ function makeTrackFrame(object: MotionObject, frame: number, time: number, polyg
     featureCount: 0,
     inlierRatio: 1,
     fbError: 0,
+    engine: 'manual',
     // A correction keeps any background-motion estimate already measured for
     // this frame. A brand-new keyframe has no estimate and must not pretend it does.
     cameraDx: existing?.cameraDx,
@@ -258,11 +274,14 @@ export default function MotionPage() {
   const [redoStack, setRedoStack] = useState<{ polygon: MotionPoint[]; references: MotionReferencePoint[] }[]>([]);
 
   const [tracking, setTracking] = useState(false);
-  const [trackProgress, setTrackProgress] = useState({ done: 0, total: 0, quality: null as number | null });
+  const [trackProgress, setTrackProgress] = useState({ done: 0, total: 0, quality: null as number | null, etaMs: null as number | null });
   const trackCancelRef = useRef(false);
-  const trackerRef = useRef<TrackerClient | null>(null);
-  const [engineState, setEngineState] = useState<EngineState>('idle');
+  const trackerRef = useRef<Sam2Client | null>(null);
+  const [engineState, setEngineState] = useState<EngineState>('checking');
   const [engineError, setEngineError] = useState<string | null>(null);
+  const [sam2Status, setSam2Status] = useState<Sam2Status | null>(null);
+  const [sam2Progress, setSam2Progress] = useState<Sam2Progress | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const [importOpen, setImportOpen] = useState(false);
   const [importDraft, setImportDraft] = useState<{ name: string; kind: 'video' | 'image' | 'sequence'; paths: string[] }>({ name: '', kind: 'video', paths: [] });
@@ -310,29 +329,107 @@ export default function MotionPage() {
     playingRef.current = playing;
   }, [playing]);
 
+  const refreshEngine = useCallback(async () => {
+    try {
+      const status: Sam2Status = await api.sam2Status();
+      setSam2Status(status);
+      setEngineError(status.error ?? null);
+      setEngineState(
+        status.installed ? 'ready' : status.stage === 'error' ? 'error' : status.stage === 'loading' ? 'loading' : 'not-installed',
+      );
+    } catch (err: any) {
+      setEngineState('error');
+      setEngineError(err?.message ?? 'The SAM 2.1 component status could not be read');
+    }
+  }, []);
+
+  const installSam2Model = useCallback(async () => {
+    if (installing) return;
+    setInstalling(true);
+    setEngineState('installing');
+    setEngineError(null);
+    setSam2Progress({ stage: 'downloading', received: 0, total: SAM2_COMPONENT.archiveBytes, message: 'Starting the SAM 2.1 download…' });
+    try {
+      const result = await api.sam2Install();
+      setSam2Status(result.status);
+      if (result.installed) {
+        setEngineState('ready');
+        notify('SAM 2.1 Small is installed. Tracking is ready.', 'success');
+      }
+    } catch (err: any) {
+      setEngineState('error');
+      setEngineError(err?.message ?? 'SAM 2.1 Small could not be installed');
+    } finally {
+      setInstalling(false);
+      void refreshEngine();
+    }
+  }, [installing, notify, refreshEngine]);
+
+  const cancelSam2Download = useCallback(async () => {
+    try {
+      await api.sam2CancelInstall();
+      notify('Cancelling the SAM 2.1 download…', 'warn');
+    } catch (err: any) {
+      notify(err?.message ?? 'The download could not be cancelled', 'error');
+    }
+  }, [notify]);
+
+  const removeSam2Model = useCallback(async () => {
+    const ok = await confirmRef.current({
+      title: 'Remove SAM 2.1 Small?',
+      message: 'Tracking will be unavailable until the model is installed again. Saved analyses, measurements and corrections are not affected.',
+      confirmLabel: 'Remove model',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const status = await api.sam2Remove();
+      setSam2Status(status);
+      setSam2Progress(null);
+      setEngineState('not-installed');
+      notify('SAM 2.1 Small was removed', 'success');
+    } catch (err: any) {
+      notify(err?.message ?? 'The SAM 2.1 model could not be removed', 'error');
+    }
+  }, [notify]);
+
   useEffect(() => {
     if (!recordId) return;
-    const client = new TrackerClient();
+    const client = new Sam2Client();
     trackerRef.current = client;
     let alive = true;
-    setEngineState('loading');
+    setEngineState('checking');
     setEngineError(null);
-    client
-      .ready()
-      .then(() => {
-        if (alive) setEngineState('ready');
-      })
-      .catch((err: any) => {
-        if (!alive) return;
+    void refreshEngine();
+    const off = onSam2Progress((progress: Sam2Progress) => {
+      if (!alive) return;
+      setSam2Progress(progress);
+      if (progress.stage === 'loading') setEngineState('loading');
+      if (progress.stage === 'downloading' || progress.stage === 'verifying' || progress.stage === 'extracting') {
+        setInstalling(true);
+        setEngineState('installing');
+      }
+      if (progress.stage === 'ready') {
+        setInstalling(false);
+        void refreshEngine();
+      }
+      if (progress.stage === 'cancelled') {
+        setInstalling(false);
+        setEngineState('not-installed');
+      }
+      if (progress.stage === 'error') {
+        setInstalling(false);
         setEngineState('error');
-        setEngineError(err?.message ?? 'The local tracking engine could not start');
-      });
+        setEngineError(progress.error ?? progress.message);
+      }
+    });
     return () => {
       alive = false;
+      off();
       if (trackerRef.current === client) trackerRef.current = null;
-      client.dispose();
+      void client.dispose();
     };
-  }, [recordId]);
+  }, [recordId, refreshEngine]);
 
   useEffect(() => {
     if (!analysis?.media) return;
@@ -1347,20 +1444,27 @@ export default function MotionPage() {
     }
     const client = trackerRef.current;
     if (!client) {
-      notify('The tracking engine is still preparing. Wait a moment and try again.', 'warn');
+      notify('The SAM 2.1 tracking engine is still starting. Wait a moment and try again.', 'warn');
+      return;
+    }
+    if (!sam2Status?.installed) {
+      notify('Install SAM 2.1 Small from the tracking panel before tracking.', 'warn');
       return;
     }
     setTracking(true);
     trackingRef.current = true;
     trackCancelRef.current = false;
+    // OpenCV is a supporting engine: it predicts motion between SAM 2.1 frames
+    // and seeds the next SAM frame. If it cannot start, tracking still runs
+    // with SAM 2.1 on every frame, exactly as before.
+    const flowClient = new FlowClient();
+    let flowEnabled = true;
     playingRef.current = false;
     setPlaying(false);
     videoRef.current?.pause();
-    setTrackProgress({ done: 0, total: endFrame - frame, quality: null });
+    setTrackProgress({ done: 0, total: Math.max(1, endFrame - frame), quality: null, etaMs: null });
     try {
       const pack = createFrameSource(current.media, videoRef.current, async (path) => (await api.motionMediaUrl(path)).url, current.settings.processingMaxWidth);
-      await client.ready();
-      setEngineState('ready');
       if (analysisRef.current !== current) throw new Error('Tracking was cancelled because the active analysis changed');
       if (trackCancelRef.current) throw new Error('Tracking was cancelled');
 
@@ -1371,6 +1475,8 @@ export default function MotionPage() {
       let stoppedAt: number | null = null;
       let reason = '';
       let completedSegments = 0;
+      const startedAt = Date.now();
+      let processed = 0;
 
       for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
         if (trackCancelRef.current) {
@@ -1402,12 +1508,13 @@ export default function MotionPage() {
           endFrame: segmentEnd,
           frameCount,
           qualityThreshold: current.settings.qualityThreshold,
-          maxFeatures: current.settings.maxFeatures,
-          protectedFrames: [],
           compensateCamera: current.settings.compensateCamera,
         });
 
         let segmentFailed = false;
+        let lastImage: ImageData | null = null;
+        let lastTrack: TrackFrame | null = null;
+        let framesSinceSam = 0;
         for (let index = segmentStart; index <= segmentEnd; index++) {
           if (trackCancelRef.current) {
             stoppedAt = index;
@@ -1421,21 +1528,130 @@ export default function MotionPage() {
           const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const time = current.media.timestamps[index];
           if (!Number.isFinite(time)) throw new Error(`No timestamp is available for frame ${index + 1}`);
-          const reply = await client.step(index, time, image);
+          const scaleX = image.width / Math.max(1, current.media.width);
+          const scaleY = image.height / Math.max(1, current.media.height);
+
+          // Optical flow between the last accepted frame and this one. On frames
+          // where it is trustworthy, SAM 2.1 is skipped and the warped outline
+          // becomes the tracking result; otherwise its outline is handed to SAM
+          // as the mask prompt so the model starts at the object's new position.
+          let flow: FlowReply | null = null;
+          let prediction: { track: TrackFrame; confidence: number } | null = null;
+          if (flowEnabled && lastImage && lastTrack) {
+            const previousFramePolygon = lastTrack.polygon.map((point) => ({ x: point.x * scaleX, y: point.y * scaleY }));
+            const previousFrameReferences = lastTrack.references.map((reference) => ({
+              ...reference,
+              point: { x: reference.point.x * scaleX, y: reference.point.y * scaleY },
+            }));
+            const samples = samplePolygon(previousFramePolygon, 20);
+            const axis = flowAxisPoints(previousFramePolygon);
+            const points = [...samples, ...previousFrameReferences.map((reference) => reference.point), axis.nose, axis.tail, axis.centre];
+            try {
+              const flowReply = await flowClient.track(lastImage, image, points, previousFramePolygon);
+              flow = flowReply;
+              const trackedReferences = previousFrameReferences.map((reference, offset) => {
+                const tracked = flowReply.points[samples.length + offset];
+                return { ...reference, point: tracked?.found ? tracked.point : reference.point };
+              });
+              prediction = buildFlowTrack({
+                frame: index,
+                time,
+                previous: lastTrack,
+                flow: flowReply,
+                scaleX,
+                scaleY,
+                frameWidth: image.width,
+                frameHeight: image.height,
+                sourceWidth: current.media.width,
+                sourceHeight: current.media.height,
+                references: trackedReferences,
+                qualityThreshold: current.settings.qualityThreshold,
+              });
+            } catch (error) {
+              flowEnabled = false;
+              flow = null;
+              prediction = null;
+              console.warn('OpenCV optical flow is unavailable; continuing with SAM 2.1 only.', error);
+            }
+          }
+
+          // Camera compensation needs a SAM mask on every frame, so no flow-only gaps.
+          const maxGap = current.settings.compensateCamera ? 0 : FLOW_MAX_GAP;
+          // A frame whose flow quality is below the review threshold gets SAM's
+          // confirmation instead of being stored as an uncertain prediction.
+          const runSam =
+            !prediction ||
+            prediction.track.quality < current.settings.qualityThreshold ||
+            shouldRunSam({
+              hasPrevious: !!lastTrack,
+              framesSinceSam,
+              confidence: prediction.confidence,
+              maxGap,
+            });
+          let reply: Sam2FrameReply | null = null;
+          if (runSam) reply = await client.step(index, time, image, prediction?.track.polygon);
           if (analysisRef.current !== current) throw new Error('Tracking was cancelled because the active analysis changed');
-          if (reply.type === 'stopped') {
+          if (reply?.type === 'stopped') {
             stoppedAt = reply.stoppedAt ?? index;
             reason = reply.reason ?? `tracking stopped at frame ${index + 1}`;
             segmentFailed = true;
             break;
           }
-          if (reply.track) {
-            // The later keyframe itself is user-owned; the next segment starts
-            // from it. The current frame's start geometry is useful metadata.
-            if (index !== segmentStart || segmentStart === frame || !segment.keyframe) frames.push(reply.track);
-            seekToFrame(index);
-            setTrackProgress({ done: Math.max(0, index - frame), total: Math.max(1, endFrame - frame), quality: reply.track.quality });
+
+          let produced: TrackFrame | null = null;
+          if (reply?.track) {
+            const track = reply.track;
+            if (flow?.affine && prediction) {
+              // Combine both engines: the SAM mask stays authoritative, while
+              // the flow measurement provides the nose/tail/centre positions
+              // and the cross-check that the two engines agree.
+              const agreement = polygonIou(track.polygon, prediction.track.polygon);
+              const axis = flowAxisPoints(track.polygon);
+              const flowInfo = prediction.track.flow!;
+              track.flow = {
+                ...flowInfo,
+                skipped: false,
+                agreement,
+                nose: axis.nose,
+                tail: axis.tail,
+                centre: axis.centre,
+                dx: polygonCentroid(track.polygon).x - polygonCentroid(lastTrack!.polygon).x,
+                dy: polygonCentroid(track.polygon).y - polygonCentroid(lastTrack!.polygon).y,
+              };
+              track.inlierRatio = Math.max(track.inlierRatio, flow.inlierRatio);
+              track.fbError = flow.fbError;
+              track.featureCount = Math.max(track.featureCount, Math.round(flow.features));
+              if (agreement < 0.5) track.qualityNotes = [...track.qualityNotes, 'OpenCV and SAM 2.1 outlines disagree on this frame'];
+            }
+            produced = track;
+            framesSinceSam = 0;
+          } else if (prediction) {
+            produced = prediction.track;
+            framesSinceSam++;
           }
+
+          if (!produced) {
+            stoppedAt = index;
+            reason = `tracking produced no result at frame ${index + 1}`;
+            segmentFailed = true;
+            break;
+          }
+          // The later keyframe itself is user-owned; the next segment starts
+          // from it. The current frame's start geometry is useful metadata.
+          if (index !== segmentStart || segmentStart === frame || !segment.keyframe) frames.push(produced);
+          processed++;
+          const elapsed = Date.now() - startedAt;
+          const remaining = Math.max(0, endFrame - index);
+          const etaMs = processed > 0 ? (elapsed / processed) * remaining : null;
+          seekToFrame(index);
+          setTrackProgress({
+            done: Math.max(0, index - frame),
+            total: Math.max(1, endFrame - frame),
+            quality: produced.quality,
+            etaMs,
+          });
+          lastImage = image;
+          lastTrack = produced;
         }
         if (segmentFailed) break;
         completedSegments++;
@@ -1464,15 +1680,24 @@ export default function MotionPage() {
       );
     } catch (err: any) {
       const message = err?.message ?? 'Tracking failed';
-      if (/OpenCV|worker|engine/i.test(message)) {
-        setEngineState('error');
-        setEngineError(message);
+      if (trackCancelRef.current || /cancel/i.test(message)) {
+        notify('Tracking cancelled', 'warn');
+      } else {
+        if (/SAM 2\.1|engine|model/i.test(message)) {
+          setEngineState('error');
+          setEngineError(message);
+        }
+        notify(message, 'error');
       }
-      notify(message, 'error');
     } finally {
+      flowClient.dispose();
+      void client.cancel();
       setTracking(false);
       trackingRef.current = false;
-      setTrackProgress({ done: 0, total: 0, quality: null });
+      setTrackProgress({ done: 0, total: 0, quality: null, etaMs: null });
+      // Re-derive the panel state from the installed component: a stopped run or
+      // a cancelled one must not leave the Track button disabled.
+      void refreshEngine();
     }
   };
 
@@ -1747,12 +1972,12 @@ export default function MotionPage() {
         />
         <div className="motion-library-intro">
           <div>
-            <strong>From footage to measurements.</strong> Import a video, image or image sequence. Draw a polygon around an object, track it with optical flow and correct any frame. Add a coordinate system and a known distance to obtain calibrated position, speed, velocity, acceleration and angles. Everything stays on this computer.
+            <strong>From footage to measurements.</strong> Import a video, image or image sequence. Draw a polygon around an object, let SAM 2.1 segment and track it, and correct any frame. Add a coordinate system and a known distance to obtain calibrated position, speed, velocity, acceleration and angles. Everything stays on this computer.
           </div>
           <div className="motion-badge-row">
             <Badge tone="ok">Offline</Badge>
-            <Badge tone="ok">No AI model</Badge>
-            <Badge tone="neutral">OpenCV.js · Apache-2.0</Badge>
+            <Badge tone="ok">On-device SAM 2.1</Badge>
+            <Badge tone="neutral">Meta SAM 2.1 Small · Apache-2.0</Badge>
             <Badge tone="warn">2D measurements with stated assumptions</Badge>
           </div>
         </div>
@@ -1789,7 +2014,7 @@ export default function MotionPage() {
           {[
             ['1', 'Import', 'Video, still image or image sequence. Read resolution and duration, then retrieve or enter real frame timing.'],
             ['2', 'Define', 'Draw a polygon or rectangle and name nose, tail or other reference points for each object.'],
-            ['3', 'Track', 'Optical flow with forward-backward validation and a robust geometric fit. Correct any frame; later tracking resumes from it.'],
+            ['3', 'Track', 'SAM 2.1 segments the outlined object and propagates its mask through the clip. Correct any frame; later tracking resumes from that correction.'],
             ['4', 'Calibrate', 'Set an origin, axes and a known distance, or use a four-corner planar homography.'],
             ['5', 'Analyse', 'Position, displacement, distance, speed, velocity, acceleration, direction and projected orientation — with raw and smoothed series.'],
             ['6', 'Export', 'CSV measurements, PDF report with graphs, graph images and a versioned .tbmotion project.'],
@@ -1990,8 +2215,8 @@ export default function MotionPage() {
               <div className="motion-progress-bar"><span style={{ width: `${trackProgress.total ? Math.min(100, (trackProgress.done / trackProgress.total) * 100) : 0}%` }} /></div>
               <span className="small">
                 {trackProgress.total === 0 && !trackProgress.done
-                  ? 'Loading the tracking engine…'
-                  : `Tracking frame ${frame + 1} · ${trackProgress.quality !== null ? `quality ${Math.round(trackProgress.quality)}` : 'starting…'}`}
+                  ? 'Loading SAM 2.1 Small…'
+                  : `Tracking frame ${frame + 1} · ${trackProgress.quality !== null ? `mask confidence ${Math.round(trackProgress.quality)}` : 'segmentation starting…'}${formatDuration(trackProgress.etaMs) ? ` · about ${formatDuration(trackProgress.etaMs)} left` : ''}`}
               </span>
               <Button size="sm" variant="danger" onClick={cancelTracking}>Stop</Button>
             </div>
@@ -2228,21 +2453,53 @@ export default function MotionPage() {
                   variant="primary"
                   icon="target"
                   onClick={() => void startTracking()}
-                  disabled={!canTrack || tracking || scanning || engineState === 'error'}
+                  disabled={!canTrack || tracking || scanning || engineState !== 'ready'}
                 >
-                  {tracking ? (engineState === 'loading' ? 'Preparing engine…' : 'Tracking…') : `Track ${selectedObject.name} through keyframes`}
+                  {tracking ? (engineState === 'loading' ? 'Loading SAM 2.1…' : 'Tracking…') : `Track ${selectedObject.name} through keyframes`}
                 </Button>
-                {engineState === 'loading' && (
-                  <div className="motion-engine small muted">
-                    <Spinner /> Loading the local OpenCV engine in the background. The interface stays usable.
-                  </div>
+                {tracking && (
+                  <Button variant="danger" onClick={cancelTracking}>Stop tracking</Button>
                 )}
+                <div className={`motion-engine small ${engineState === 'error' ? 'motion-warn' : 'muted'}`}>
+                  <div className="motion-tracking-meta">
+                    <span>{SAM2_COMPONENT.name}</span>
+                    <span>{SAM2_COMPONENT.license}</span>
+                    <span>{sam2Status?.installed ? `${formatBytes(sam2Status.bytes)} installed` : `${formatBytes(SAM2_COMPONENT.archiveBytes)} download`}</span>
+                  </div>
+                  {sam2Status?.installed ? (
+                    <div className="stack" style={{ gap: 3 }}>
+                      <div>Segmentation runs locally · {sam2Status.runtime.replace(/ · /g, ', ')}</div>
+                      <div>
+                        <button type="button" className="link-like" onClick={() => void removeSam2Model()}>Remove model</button>
+                      </div>
+                    </div>
+                  ) : installing ? (
+                    <div className="stack" style={{ gap: 6 }}>
+                      <div className="motion-progress-row">
+                        <div className="motion-progress-bar">
+                          <span style={{ width: `${sam2Progress?.total ? Math.min(100, ((sam2Progress.received ?? 0) / sam2Progress.total) * 100) : 6}%` }} />
+                        </div>
+                        <Button size="sm" onClick={() => void cancelSam2Download()}>Cancel</Button>
+                      </div>
+                      <div>{sam2Progress?.message ?? 'Installing SAM 2.1 Small…'}</div>
+                    </div>
+                  ) : (
+                    <div className="stack" style={{ gap: 6 }}>
+                      <div>
+                        Download SAM 2.1 Small once ({formatBytes(SAM2_COMPONENT.archiveBytes)}). It is checksum-verified, stored outside the installer and then runs offline on the CPU. About 300 MB of free disk space is needed.
+                      </div>
+                      <Button size="sm" icon="download" onClick={() => void installSam2Model()} disabled={engineState === 'checking'}>
+                        Install SAM 2.1 Small
+                      </Button>
+                    </div>
+                  )}
+                  {engineState === 'checking' && <div><Spinner /> Checking the local SAM 2.1 component…</div>}
+                  {engineState === 'loading' && <div><Spinner /> Loading the model into memory…</div>}
+                </div>
                 {engineState === 'error' && (
                   <div className="motion-warn small">Tracking engine error: {engineError}</div>
                 )}
-                {tracking ? (
-                  <Button variant="danger" onClick={cancelTracking}>Stop tracking</Button>
-                ) : (
+                {!tracking && (
                   <div className="muted small">
                     {!timingKnown
                       ? 'Timing is required. Scan the video or apply a manual FPS.'
@@ -2258,7 +2515,7 @@ export default function MotionPage() {
                   <Input type="number" min="0" max="100" value={analysis.settings.qualityThreshold} onChange={(e) => updateSettings({ qualityThreshold: Math.min(100, Math.max(0, Number(e.target.value))) })} />
                 </div>
                 <div className="motion-warn small">
-                  Quality is a heuristic confidence score from feature count, forward-backward error and geometric consistency. It is not a calibrated probability.
+                  Quality combines the SAM 2.1 decoder's mask score, frame-to-frame mask overlap and area continuity. It is a heuristic confidence indicator, not a calibrated probability.
                 </div>
               </div>
             )}
@@ -2355,7 +2612,7 @@ function ImportModal({
           Media files are referenced in place rather than copied, so keep them available. For video, the application reads real presentation timestamps where the local decoder provides them. It never assumes a frame rate silently. A sequence must have a known FPS before tracking.
         </div>
         <div className="motion-warn small">
-          No AI model, cloud service or external API is used. Object definition is manual and tracking uses classical optical flow.
+          No cloud service or external API is used. Object definition is manual; segmentation and tracking run on this computer with Meta's SAM 2.1 Small model once you install that component. Media files never leave the machine.
         </div>
       </div>
     </Modal>

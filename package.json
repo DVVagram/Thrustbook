@@ -27,11 +27,13 @@
     "build": "npm run build:app && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:motion": "node scripts/motion-tests.mjs",
+    "test:sam2": "node scripts/sam2-tests.mjs",
     "test:stage": "node tests/stage-ui-electron.mjs",
-    "test:tracker": "node tests/tracker-electron.mjs",
+    "test:sam2-engine": "node tests/sam2-engine-electron.mjs",
+    "test:sam2-ui": "node tests/motion-tracking-electron.mjs",
     "test:page": "node tests/motion-page-electron.mjs",
     "check:layout": "node scripts/layout-check.mjs",
-    "check": "npm run test:motion && npm run test:stage && npm run test:tracker && npm run typecheck && npm run build && npm run test:page && npm run check:layout",
+    "check": "npm run test:motion && npm run test:sam2 && npm run test:stage && npm run typecheck && npm run build && npm run test:page && npm run check:layout",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
@@ -53,6 +55,8 @@
   },
   "dependencies": {
     "@techstark/opencv-js": "^4.12.0-release.1",
-    "electron-updater": "^6.8.11"
+    "adm-zip": "^0.5.16",
+    "electron-updater": "^6.8.11",
+    "onnxruntime-node": "^1.31.1"
   }
 }

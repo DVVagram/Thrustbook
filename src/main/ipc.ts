@@ -53,6 +53,16 @@ import {
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, updateStatus } from './updates';
 import { isKnownMediaPath, mediaUrl, rememberMediaPath } from './media';
 import { projectFileName, readMotionProjectFile, writeMotionPdf, writeTextFile } from './motion';
+import {
+  cancelSam2Install,
+  installSam2,
+  removeSam2,
+  sam2EngineInfo,
+  sam2Status,
+  startSam2Session,
+  stepSam2Session,
+  stopSam2Session,
+} from './sam2';
 import { dataDir, documentsDir, examplesRoot, isInside, safeFileName, setWorkspaceMode, uniquePath, workspaceMode } from './paths';
 import { deleteExamplesWorkspace, examplesStatus } from './examples';
 import { DEFAULT_STAGES } from '../shared/constants';
@@ -402,6 +412,14 @@ const handlers: Record<string, Handler> = {
     }
     return { canceled: false, path: filePath, ...result };
   },
+  'motion.sam2.status': () => sam2Status(),
+  'motion.sam2.info': () => sam2EngineInfo(),
+  'motion.sam2.install': () => installSam2(),
+  'motion.sam2.cancelInstall': () => cancelSam2Install(),
+  'motion.sam2.remove': () => removeSam2(),
+  'motion.sam2.start': (payload: any) => startSam2Session(payload),
+  'motion.sam2.frame': (payload: any) => stepSam2Session(payload),
+  'motion.sam2.cancel': (payload: any) => stopSam2Session(payload),
   'motion.exportReport': async (payload: any, win) => {
     const html = String(payload?.html ?? '');
     if (!html.trim()) throw new Error('The analysis report is empty');

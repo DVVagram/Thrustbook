@@ -114,6 +114,15 @@ export const api = {
   integrity: () => call<any>('storage.integrity'),
   moveStorage: () => call<any>('storage.move'),
 
+  sam2Status: () => call<any>('motion.sam2.status'),
+  sam2Info: () => call<any>('motion.sam2.info'),
+  sam2Install: () => call<any>('motion.sam2.install'),
+  sam2CancelInstall: () => call<any>('motion.sam2.cancelInstall'),
+  sam2Remove: () => call<any>('motion.sam2.remove'),
+  sam2Start: (request: any) => call<any>('motion.sam2.start', { request }),
+  sam2Frame: (sessionId: string, frame: any) => call<any>('motion.sam2.frame', { sessionId, frame }),
+  sam2Cancel: (sessionId: string) => call<any>('motion.sam2.cancel', { sessionId }),
+
   motionMediaUrl: (path: string) => call<any>('motion.mediaUrl', { path }),
   relinkMedia: () => call<any>('motion.relinkMedia'),
   exportMotionCsv: (name: string, csv: string) => call<any>('motion.exportCsv', { name, csv }),
@@ -136,4 +145,7 @@ export function onMenuAction(cb: (action: string) => void): () => void {
 }
 export function onImportProgress(cb: (payload: any) => void): () => void {
   return bridge?.onImportProgress?.(cb) ?? (() => undefined);
+}
+export function onSam2Progress(cb: (payload: any) => void): () => void {
+  return bridge?.onSam2Progress?.(cb) ?? (() => undefined);
 }

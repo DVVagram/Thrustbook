@@ -9,17 +9,24 @@ files:
   - package.json
   - "!**/*.map"
 asar: true
+# ONNX Runtime ships a native binding plus its shared library; both must live
+# outside the asar archive to be loadable.
+asarUnpack:
+  - node_modules/onnxruntime-node/bin/**/*
 extraResources:
   - THIRD_PARTY_NOTICES.md
   - THIRD_PARTY_LICENSES/**/*
   - LICENSE
-asarUnpack: []
 win:
   icon: build/icon.png
   target:
     - target: nsis
       arch: [x64]
   artifactName: Thrustbook-Setup-${version}-${arch}.${ext}
+  files:
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**"
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
 nsis:
   oneClick: false
   perMachine: false
@@ -41,6 +48,9 @@ linux:
   category: Science
   maintainer: Thrustbook <engineering@thrustbook.local>
   artifactName: Thrustbook-${version}-${arch}.${ext}
+  files:
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**"
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**"
 mac:
   icon: build/icon.png
   target:
@@ -52,6 +62,9 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   artifactName: Thrustbook-${version}-${arch}.${ext}
+  files:
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**"
+    - "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**"
 dmg:
   title: Thrustbook ${version}
 publish:

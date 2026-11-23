@@ -33,6 +33,12 @@ const api = {
     ipcRenderer.on('rocketlab:import-progress', listener);
     return () => ipcRenderer.removeListener('rocketlab:import-progress', listener);
   },
+
+  onSam2Progress: (callback: (payload: any) => void) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('rocketlab:sam2-progress', listener);
+    return () => ipcRenderer.removeListener('rocketlab:sam2-progress', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('rocketlab', api);

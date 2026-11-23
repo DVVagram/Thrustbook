@@ -56,6 +56,39 @@ export interface TrackFrame {
   cameraDx?: number;
   cameraDy?: number;
   cameraValid?: boolean;
+  /** Engine that produced this frame. Manual frames are user-owned corrections. */
+  engine?: 'sam2' | 'opencv' | 'manual';
+  /** Supporting OpenCV optical-flow measurement for this frame. */
+  flow?: MotionFlowTrack;
+  /** SAM 2.1 decoder confidence for the chosen mask (0–1). */
+  predictedIou?: number;
+  /** Overlap with the previous frame's mask (0–1), when propagated. */
+  maskIou?: number;
+  /** Segmented mask area in source pixels. */
+  maskArea?: number;
+}
+
+export interface MotionFlowTrack {
+  method: 'lk';
+  confidence: number;
+  inlierRatio: number;
+  fbError: number;
+  trackedFeatures: number;
+  /** Uniform scale and rotation of the partial-affine transform. */
+  scale: number;
+  rotationDeg: number;
+  /** Object centroid motion in source pixels. */
+  dx: number;
+  dy: number;
+  nose: MotionPoint;
+  tail: MotionPoint;
+  centre: MotionPoint;
+  /** Masked template-match score that anchored the translation, when available. */
+  templateScore?: number;
+  /** True when SAM 2.1 was deliberately skipped for this frame. */
+  skipped: boolean;
+  /** Intersection-over-union with the SAM 2.1 outline, where it ran. */
+  agreement?: number;
 }
 
 export interface MotionHistoryEntry {

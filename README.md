@@ -30,7 +30,7 @@ Supported targets: Windows 10/11 x64 (NSIS `.exe`), Linux x64 (AppImage and `.de
 | Data Log | Unified chronological timeline, table view, project/test/flight/revision/measurement history, full-text search |
 | Data Analysis | Multi-panel interactive graphs, linked time range, unit conversion, statistics, event markers, saved workspaces |
 | Dataset Comparison | Multi-dataset overlay, side-by-side, difference, percentage difference, distributions, alignment and paired statistics |
-| Video & Image Analysis | Import video, still images or image sequences; manually outline objects; OpenCV optical-flow tracking with correction; calibration, 2D motion measurements, graphs, CSV/PDF/project exports |
+| Video & Image Analysis | Import video, still images or image sequences; manually outline objects; Meta SAM 2.1 mask segmentation with OpenCV optical-flow assistance and per-frame correction; calibration, 2D motion measurements, graphs, CSV/PDF/project exports |
 | Engineering Documentation | Document library with checksums, previews, tags and links to any record |
 | Issues & Observations | Issue lifecycle, severity, investigation and verification links |
 | Reports | Ten report kinds rendered to HTML and PDF, with recorded/derived content separated |
@@ -58,12 +58,13 @@ src/
     importers.ts   CSV/TSV/TXT/JSON/XLSX readers and header/type detection
     media.ts       authorised, range-capable thrustbook-media:// protocol for source footage
     motion.ts      motion-project validation, PDF report and export writers
+    sam2.ts       SAM 2.1 component installer, ONNX sessions and mask propagation
     updates.ts     electron-updater integration
     paths.ts       user-data layout and path containment
   preload/     contextBridge surface (no Node access for the UI)
   renderer/    React 19 + TypeScript UI (Vite build)
     Chart.tsx      custom canvas chart engine (no chart dependency)
-    motion/        tracker worker/client, frame source, canvas overlay, calibration, report
+    motion/        SAM 2.1 client, OpenCV optical-flow worker/client, frame source, canvas overlay, calibration, report
     pages/         one page per module
   shared/      units, statistics, constants, types shared by both processes
 ```
@@ -77,9 +78,25 @@ src/
 - **Charts** are drawn on canvas by the application (line, scatter, area, bar, histogram,
   distribution, box, XY, difference, percentage difference, multi-axis, zoom/pan, markers, PNG
   export, downsampling indicator).
-- **Video & Image Analysis** uses a classic Web Worker for the embedded-WASM OpenCV.js build,
-  because compiling that build on the UI thread freezes the renderer. Tracking frames are transferred
-  as `ImageData` buffers; only one frame is decoded/held in the renderer at a time.
+- **Video & Image Analysis** runs Meta SAM 2.1 Small in the main process through `onnxruntime-node`
+  on the CPU, with a bounded intra-op thread count. The renderer decodes one frame at a time and
+  transfers RGBA buffers over IPC; the engine crops a region around the object, encodes it once per
+  frame and reuses the previous mask as a prompt for the decoder, so the interface never blocks on
+  the model. The 143 MB component is not bundled: it is downloaded once from a public Hugging Face
+  release, checked against a pinned SHA-256, and unpacked into the application data folder.
+- **OpenCV optical flow** supports SAM 2.1 rather than replacing it. A classic Web Worker loads the
+  bundled OpenCV.js build (Apache-2.0) and tracks the outline's contour, the object's nose, tail and
+  centre, and its reference points between frames with pyramidal Lucas–Kanade flow, a
+  forward–backward consistency check and a robust similarity fit (RANSAC-style outlier rejection).
+  A masked template match of the previous outline anchors the translation when a low-texture body
+  would otherwise let the flow slide, and an outline whose contour covers less than 60% of its
+  segmented mask falls back to the mask extent instead of a partial or degenerate shape.
+  When the flow is confident, SAM is skipped for up to two consecutive frames and the warped
+  outline becomes that frame's tracking result; on the next SAM frame the predicted outline is
+  passed as the decoder mask prompt and used to place the ROI, so the model restarts at the object
+  instead of a stale mask. Sampled frames record both engines' outlines (IoU agreement), flow
+  confidence, inlier ratio, forward–backward error, scale, rotation and the nose/tail/centre
+  positions. If OpenCV cannot load, the renderer automatically falls back to SAM on every frame.
 - **Source media** is delivered through `thrustbook-media://local/<base64url-path>`, which only serves
   a path chosen in a file dialog this session or referenced by a saved motion analysis. It supports
   HTTP Range requests and CORS so canvas processing is not tainted. Original files are never changed.
@@ -183,11 +200,13 @@ npm run dev        # Vite dev server + Electron (renderer hot reload)
 npm run typecheck  # TypeScript, no emit
 npm run build      # esbuild main/preload + Vite renderer -> dist/
 npm run test:motion    # 23 deterministic measurement/calibration/tracking-merge tests
+npm run test:sam2      # 11 deterministic SAM 2.1 mask-geometry tests
 npm run test:stage     # canvas overlay, viewport and pointer-coordinate tests
-npm run test:tracker   # Electron + OpenCV worker translation/rotation/correction test
+npm run test:sam2-engine # real SAM 2.1 model in Electron; needs the installed component
+npm run test:sam2-ui   # real model through the UI: import, Track, saved outlines (needs the component)
 npm run test:page      # Electron page smoke test: load, keyframes, history and overlay
 npm run check:layout  # launch an isolated app and check all main pages at 1120px
-npm run check      # measurement/stage/tracker tests, typecheck, build, page test, layout check
+npm run check      # measurement, SAM geometry, stage, typecheck, build, page and layout checks
 npm start          # build, then launch the packaged runtime locally
 ```
 
@@ -297,17 +316,50 @@ explicitly starts the download/install, and never touch user data.
   that overlap.
   The detector was verified against the original defect by injecting the old 24px Export button: the
   check failed with `projects: button text overflow`; the current UI passes all pages.
+- The motion tests also bundle `tests/flow.test.ts`: outline sampling, principal-axis
+  nose/tail/centre derivation (including motion direction), similarity warping, flow quality,
+  polygon IoU, half-resolution coordinate mapping, rejection of implausible or low-confidence flow,
+  and the SAM scheduling rules (including the every-frame rule under camera compensation).
 - The motion engine has 23 deterministic tests (`npm run test:motion`) covering stationary,
   horizontal, vertical and diagonal motion, distance versus displacement, acceleration, variable
   frame timing, rotated axes, inches, homography, invalid calibration, relative length, orientation,
   angular velocity, foreshortening, geometry, CSV, uncertain status, keyframe segmentation, merge
-  preservation, camera-translation compensation and report content/escaping. The Electron worker
-  harness (`npm run test:tracker`) tracks a synthetic translating object (last centroid ≈ 174 px
-  against the expected 176 px), a rotating object, stops before a protected manual-correction frame,
-  merges two keyframe intervals, and measures a synthetic camera translation of ≈ 1.93 px/frame
-  against 2 px/frame with 30/30 valid background estimates. The page test (`npm run test:page`)
-  loads a saved analysis, restores a keyframe history entry and seeks the video, adds/deletes a
-  keyframe, verifies auto-save persistence and toggles the outline overlay.
+  preservation, camera-translation compensation and report content/escaping.
+- SAM 2.1 mask handling has 12 deterministic tests (`npm run test:sam2`): ROI clamping to the frame,
+  canvas mapping round-trips, prompt placement, mask-to-polygon conversion and simplification,
+  component selection when a second blob appears, mask resampling after an ROI change, bounded
+  reference-point motion, segmentation scoring, background translation under an ignored object,
+  binary threshold alignment and rasterising a flow-predicted outline into the decoder mask prompt.
+- The real-model Electron harness (`npm run test:sam2-engine`, not part of `npm run check` because
+  it needs the installed component) refines a drawn outline and tracks a synthetic translating
+  rocket for 10/10 frames with a mean centroid error of 1.7 px (maximum 8.3 px) and a minimum
+  heuristic quality of 89; its nose reference point moves 58 px with the object; a corrected outline
+  on frame 5 is re-segmented with its centre within 0.5 px of the rocket; a half-resolution segment
+  (640×360 frames declared as 1280×720 footage, 3/3 frames at 1.0 px maximum centroid error) checks
+  source-coordinate mapping, reference lift and mask area in source pixels; and background
+  translation is measured as 3.6 px/frame against an injected 3 px/frame with 5 of 6 frames valid.
+- The UI tracking test (`npm run test:sam2-ui`, also needs the component) creates a real
+  image-sequence analysis with generated PNG frames, opens Video & Image Analysis, clicks *Track*
+  and reads the saved analysis back. A five-frame run at the default 384 px processing width
+  produces SAM 2.1, OpenCV, OpenCV, SAM 2.1, OpenCV: optical flow took over three frames (0.98–0.99
+  confidence), SAM resumed after the two flow-only frames using the flow-seeded prompt (outline
+  agreement above 0.4), every outline covered more than 1,500 px² (never a degenerate sliver or a
+  partial contour), the template match scored 0.97–0.99, the maximum centroid error was 3.6 px
+  (reference 5.0 px), qualities were 92–99, no renderer errors occurred, and the Track button was
+  usable again afterwards. The same run at the 1280 px processing width kept the maximum centroid
+  error at 1.2 px (reference 3.8 px) with qualities of 96–99. With camera compensation on (where
+  every frame needs a SAM mask) all five frames were produced by SAM 2.1 (maximum centroid error
+  5.0 px, reference 3.7 px), each later frame still carrying a flow measurement. In the five-frame
+  hybrid run SAM encoded 2 of 5 frames, 60% fewer encoder passes than the previous every-frame
+  tracking.
+- The on-demand installer was exercised in a real Electron main process with the production user-data
+  path: it downloaded the 142.9 MB archive in 64 s, verified the pinned SHA-256, unpacked the two
+  model files (154.5 MB on disk), wrote the component manifest, reported `ready`, loaded the ONNX
+  sessions, and tracked a probe frame through the installed copy. No progress listener was needed
+  for the check; the progress events are the same ones the panel renders.
+- The page test (`npm run test:page`) loads a saved analysis, restores a keyframe history entry and
+  seeks the video, adds/deletes a keyframe, verifies auto-save persistence and toggles the outline
+  overlay.
 - A packaged-runtime integration check created an image-sequence analysis, waited for the worker
   engine to become ready, drew an outline programmatically through the stored project, clicked Track,
   and received 30 tracked frames with no renderer errors. This exercised the production CSP,
@@ -349,15 +401,27 @@ Open **Video & Image Analysis** from the sidebar. Analyses belong to the selecte
    insert/delete points, undo/redo, then apply the outline. Add named reference points such as Nose
    and Tail, and enter known length/width/height. Objects are independent and keep their own outline,
    references, correction history and settings.
-3. **Track and keyframe.** Click *Track … through keyframes*. A classic Web Worker loads OpenCV.js
-   in the background so the interface stays responsive. Tracking uses pyramidal Lucas–Kanade optical
-   flow, forward–backward validation, a robust similarity fit (translation, rotation and uniform
-   scale) and feature re-detection. Corrections are keyframes: tracking reinitialises from each
-   saved keyframe, runs to the next one, and preserves every manual correction and every frame
-   outside the recalculated interval. Keyframes can be confirmed, reviewed and deleted; replaced or
-   deleted keyframes are retained in a correction history and can be restored. Each frame records a
-   heuristic quality score and notes. If the object is lost the run stops; it does not invent a
-   position.
+3. **Install the engine and track.** Tracking uses Meta's SAM 2.1 Small model, which is a separate
+   on-demand component. The tracking panel reports whether it is installed, its size on disk, and an
+   *Install* button; installing downloads 143 MB from a public release, shows download progress with
+   an estimate, verifies the archive against a pinned SHA-256, unpacks it into the application data
+   folder and loads the ONNX sessions. The download can be cancelled and the component removed again;
+   errors name the failing step. Tracking stays disabled until the component is ready.
+   Click *Track … through keyframes*. The main process runs the Hiera-Small encoder and decoder on
+   the CPU: a frame is cropped around the object, encoded once, and the previous mask is fed back as
+   a mask prompt so the mask follows the object through the clip. Between those segmentation frames
+   a bundled OpenCV worker measures pyramidal Lucas–Kanade optical flow over the outline, the
+   object's nose, tail and centre and its reference points; while the flow stays confident the
+   warped outline is used directly and SAM is skipped (at most two frames in a row), then the next
+   SAM frame is seeded with that predicted outline as its mask prompt. Both outlines are compared on
+   every SAM frame. Corrections are keyframes: a redrawn outline re-segments that frame and tracking
+   continues from it, preserving every manual correction and every frame outside the recalculated
+   interval. Keyframes can be confirmed, reviewed and deleted; replaced or deleted keyframes are
+   retained in a correction history and can be restored. Each frame records the decoder's predicted
+   IoU, mask overlap, mask area, a heuristic quality score and, when flow ran, its confidence,
+   inlier ratio, forward–backward error, scale, rotation, agreement and nose/tail/centre positions.
+   If the object is lost the run stops on that frame; it does not invent a position. If OpenCV fails
+   to load, SAM tracks every frame exactly as before.
 4. **Calibrate.** Set an origin and X/Y axes directly on the image, then calibrate with two points of
    known distance or four points forming a planar homography. Supported length units include mm, cm,
    m, in and ft. The active model is shown; a pixel scale is never presented as valid across depth
@@ -379,7 +443,12 @@ measuring plane matches the calibration plane. Without one, values are image-pla
 Object-length ratios are relative measurements, not absolute distance. A single ordinary video is a
 2D projection: no 3D coordinates, camera mounting angle or lens distortion correction is invented.
 Foreshortening estimates use the stated orthographic assumption and are shown as an estimate.
-Tracking quality is a heuristic score, not a calibrated probability. Camera compensation removes
+Tracking quality is a heuristic score, not a calibrated probability. SAM 2.1 returns 2D image
+masks, so a mask clipped by the crop or the frame, a partially occluded object or a low-contrast
+edge lowers the score, and the run stops rather than interpolating through a lost object. Frames
+filled in by optical flow are scored from flow inliers, forward–backward error and area continuity;
+a prediction that scores below the review threshold is handed to SAM instead of being stored. Camera
+compensation removes
 estimated **background translation only**; camera zoom, rotation, rolling shutter and parallax are not
 corrected. Annotated-video export and bundled FFmpeg are not implemented; video decoding and
 timestamps use the Chromium media stack.

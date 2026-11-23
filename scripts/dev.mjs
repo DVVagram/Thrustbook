@@ -12,7 +12,7 @@ const shared = {
   target: 'node24',
   format: 'cjs',
   sourcemap: false,
-  external: ['electron', 'electron-updater'],
+  external: ['electron', 'electron-updater', 'onnxruntime-node'],
 };
 
 async function bundle() {

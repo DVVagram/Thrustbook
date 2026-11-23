@@ -252,6 +252,21 @@ try {
   assert.ok(projects.data.length > 0, 'example workspace has no project');
   const projectId = projects.data[0].id;
 
+  // The SAM 2.1 engine bridge must answer even before any analysis is open, and
+  // must describe the on-demand component rather than throwing through the IPC
+  // allow-list.
+  const engine = await evaluate(cdp, `window.rocketlab.invoke('motion.sam2.status')`);
+  assert.equal(engine.ok, true, engine.error);
+  assert.equal(typeof engine.data?.installed, 'boolean', 'SAM 2.1 status must report installed');
+  assert.ok(typeof engine.data?.stage === 'string' && engine.data.stage.length > 0, 'SAM 2.1 status must report a stage');
+  assert.ok(String(engine.data?.directory || '').includes('sam2.1-hiera-small'), 'SAM 2.1 status must name the component directory');
+  const unknownSession = await evaluate(
+    cdp,
+    `window.rocketlab.invoke('motion.sam2.frame', { sessionId: 'missing-session', frame: { index: 0, time: 0, width: 2, height: 2, data: new Uint8Array(16) } })`,
+  );
+  assert.equal(unknownSession.ok, true, unknownSession.error);
+  assert.equal(unknownSession.data?.type, 'stopped', 'an unknown SAM 2.1 session must stop cleanly');
+
   const created = await evaluate(
     cdp,
     `window.rocketlab.invoke('records.create', ${JSON.stringify({
@@ -272,6 +287,27 @@ try {
 
   await evaluate(cdp, `location.hash = '#/motion?analysis=${created.data.id}'`);
   await waitFor(cdp, `!!document.querySelector('.motion-page') && !!document.querySelector('.motion-history-list')`, 20_000, 'motion workspace');
+  const enginePanel = await evaluate(cdp, `document.querySelector('.motion-engine')?.textContent || ''`);
+  assert.ok(enginePanel.includes('SAM 2.1 Small'), 'the tracking panel must name the SAM 2.1 component');
+  assert.ok(/Install|Remove model/.test(enginePanel), 'the tracking panel must offer install or removal');
+  const engineLayout = await evaluate(
+    cdp,
+    `(() => {
+      const engine = document.querySelector('.motion-engine');
+      if (!engine) return null;
+      const link = engine.querySelector('button.link-like');
+      const style = link ? getComputedStyle(link) : null;
+      return {
+        direction: getComputedStyle(engine).flexDirection,
+        link: style ? { border: style.borderTopWidth, background: style.backgroundColor, font: style.fontSize } : null,
+      };
+    })()`,
+  );
+  assert.equal(engineLayout?.direction, 'column', 'the engine chips and runtime text must stack instead of sharing a row');
+  if (engineLayout?.link) {
+    assert.equal(engineLayout.link.border, '0px', 'the remove-model action must not keep native button chrome');
+    assert.match(engineLayout.link.background, /rgba\(0, 0, 0, 0\)|transparent/, 'the remove-model action must not paint a button background');
+  }
   assert.equal(await evaluate(cdp, `document.querySelectorAll('.motion-keyframe-list .motion-keyframe-item').length`), 2, 'initial keyframe list count');
   assert.equal(await evaluate(cdp, `document.querySelectorAll('.motion-history-list .motion-keyframe-item').length`), 1, 'initial correction history count');
 

@@ -8,7 +8,7 @@ const shared = {
   format: 'cjs',
   sourcemap: false,
   logLevel: 'info',
-  external: ['electron', 'electron-updater'],
+  external: ['electron', 'electron-updater', 'onnxruntime-node'],
 };
 
 await rm('dist', { recursive: true, force: true });
