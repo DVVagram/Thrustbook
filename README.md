@@ -200,10 +200,14 @@ npm run dev        # Vite dev server + Electron (renderer hot reload)
 npm run typecheck  # TypeScript, no emit
 npm run build      # esbuild main/preload + Vite renderer -> dist/
 npm run test:motion    # 23 deterministic measurement/calibration/tracking-merge tests
-npm run test:sam2      # 11 deterministic SAM 2.1 mask-geometry tests
+npm run test:sam2      # 12 deterministic SAM 2.1 mask-geometry tests
 npm run test:stage     # canvas overlay, viewport and pointer-coordinate tests
 npm run test:sam2-engine # real SAM 2.1 model in Electron; needs the installed component
 npm run test:sam2-ui   # real model through the UI: import, Track, saved outlines (needs the component)
+PROCESSING_MAX_WIDTH=1280 npm run test:sam2-ui  # same run at full processing width
+COMPENSATE=1 npm run test:sam2-ui                # camera compensation: SAM on every frame
+BLOCK_OPENCV=1 npm run test:sam2-ui             # OpenCV unavailable: SAM-only fallback
+THURSTBOOK_EXE=release/win-unpacked/Thrustbook.exe npm run test:sam2-ui  # against a packaged build
 npm run test:page      # Electron page smoke test: load, keyframes, history and overlay
 npm run check:layout  # launch an isolated app and check all main pages at 1120px
 npm run check      # measurement, SAM geometry, stage, typecheck, build, page and layout checks
@@ -351,7 +355,13 @@ explicitly starts the download/install, and never touch user data.
   every frame needs a SAM mask) all five frames were produced by SAM 2.1 (maximum centroid error
   5.0 px, reference 3.7 px), each later frame still carrying a flow measurement. In the five-frame
   hybrid run SAM encoded 2 of 5 frames, 60% fewer encoder passes than the previous every-frame
-  tracking.
+  tracking. The identical run against the packaged `Thrustbook.exe` produced the same engines and
+  errors, confirming the worker and OpenCV assets resolve from the application archive, and with
+  `BLOCK_OPENCV=1` (the renderer cannot create its flow worker) all five frames fell back to SAM
+  2.1 and the run still completed with a 7.6 px maximum centroid error.
+- A route sweep rendered all 20 main pages in both the development and packaged builds with no
+  renderer exceptions or console errors and the same content on each page; an unknown route kept
+  the shell and fell back to the dashboard.
 - The on-demand installer was exercised in a real Electron main process with the production user-data
   path: it downloaded the 142.9 MB archive in 64 s, verified the pinned SHA-256, unpacked the two
   model files (154.5 MB on disk), wrote the component manifest, reported `ready`, loaded the ONNX

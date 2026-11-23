@@ -30,6 +30,7 @@ const HEIGHT = 360;
 const FRAMES = 5;
 const PROCESSING_MAX_WIDTH = Number(process.env.PROCESSING_MAX_WIDTH || 384);
 const COMPENSATE = process.env.COMPENSATE === '1';
+const BLOCK_OPENCV = process.env.BLOCK_OPENCV === '1';
 
 const appDataRoot =
   process.env.APPDATA ||
@@ -321,6 +322,7 @@ const analysis = {
     smoothingWindow: 1,
     processingMaxWidth: PROCESSING_MAX_WIDTH,
     compensateCamera: COMPENSATE,
+    opencvBlocked: BLOCK_OPENCV,
     qualityThreshold: 45,
     maxFeatures: 160,
     displayLengthUnit: 'm',
@@ -335,6 +337,7 @@ const analysis = {
     showTrajectory: true,
     showReadout: true,
     compensateCamera: COMPENSATE,
+    opencvBlocked: BLOCK_OPENCV,
   },
   selectedObjectId: 'ui-object',
   importantFrames: [],
@@ -348,9 +351,14 @@ let cdp;
 let stderr = '';
 try {
   const port = await freePort();
-  const electronArgs = ['.', `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`];
+  // Set THURSTBOOK_EXE to run the same checks against a packaged build, where
+  // the worker and OpenCV assets are served from the application archive.
+  const packagedExe = process.env.THURSTBOOK_EXE;
+  const electronArgs = packagedExe
+    ? [`--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`]
+    : ['.', `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`];
   if (process.env.CI) electronArgs.push('--no-sandbox', '--disable-gpu');
-  child = spawn(electronPath, electronArgs, {
+  child = spawn(packagedExe || electronPath, electronArgs, {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -408,6 +416,24 @@ try {
   assert.ok(buttonBefore, 'the track button was not rendered');
   assert.equal(buttonBefore.disabled, false, `the track button is disabled: ${JSON.stringify(buttonBefore)}`);
 
+  if (BLOCK_OPENCV) {
+    // Simulate a build where the OpenCV engine cannot start, at the point the
+    // renderer creates its worker.
+    await evaluate(
+      cdp,
+      `(() => {
+        const OriginalWorker = window.Worker;
+        window.Worker = class extends OriginalWorker {
+          constructor(url, options) {
+            if (String(url).includes('flow-worker')) throw new Error('OpenCV is unavailable in this test run');
+            super(url, options);
+          }
+        };
+        return true;
+      })()`,
+    );
+  }
+
   await evaluate(
     cdp,
     `(() => {
@@ -454,7 +480,12 @@ try {
     'SAM 2.1 must remain the primary engine',
   );
   const flowFrames = tracks.filter((track) => track.engine === 'opencv');
-  if (COMPENSATE) {
+  if (BLOCK_OPENCV) {
+    // The documented fallback: without a working OpenCV engine, tracking must
+    // still run, with SAM 2.1 segmenting every frame.
+    assert.ok(tracks.every((track) => track.engine === 'sam2'), 'blocked OpenCV must fall back to SAM on every frame');
+    assert.deepEqual(flowFrames, [], 'no OpenCV frames may be recorded when the engine is unavailable');
+  } else if (COMPENSATE) {
     // Camera compensation needs SAM's mask on every frame, but flow still
     // measures the object and feeds the prompt/agreement cross-check.
     assert.ok(tracks.every((track) => track.engine === 'sam2'), 'camera-compensated runs segment every frame');
@@ -508,6 +539,7 @@ try {
   const result = {
     processingMaxWidth: PROCESSING_MAX_WIDTH,
     compensateCamera: COMPENSATE,
+    opencvBlocked: BLOCK_OPENCV,
     frames: tracks.length,
     maxCentroidError: Math.max(...errors),
     maxReferenceError: Math.max(...referenceErrors),
