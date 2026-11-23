@@ -1589,7 +1589,13 @@ export default function MotionPage() {
               maxGap,
             });
           let reply: Sam2FrameReply | null = null;
-          if (runSam) reply = await client.step(index, time, image, prediction?.track.polygon);
+          // A gap frame rejected by the flow still needs SAM to know where the
+          // object was: the last accepted outline is the best available prompt.
+          // Consecutive frames keep their own propagated mask, so the outline is
+          // only supplied when the engine skipped the previous frame.
+          const flowGap = !lastTrack || index - lastTrack.frame > 1;
+          const samPrompt = prediction?.track.polygon ?? (flowGap ? lastTrack?.polygon : undefined);
+          if (runSam) reply = await client.step(index, time, image, samPrompt);
           if (analysisRef.current !== current) throw new Error('Tracking was cancelled because the active analysis changed');
           if (reply?.type === 'stopped') {
             stoppedAt = reply.stoppedAt ?? index;

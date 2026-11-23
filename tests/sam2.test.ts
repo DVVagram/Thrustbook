@@ -115,6 +115,24 @@ test('a diagonal edge keeps enough points to draw the shape', () => {
   assert.ok(segment!.area > 2000);
 });
 
+test('a thin diagonal object keeps its outline instead of a bounding box', () => {
+  const roi = { x: 0, y: 0, width: 400, height: 400 };
+  const mapping = mappingFor(roi, SIZE);
+  // A rocket body is only a few pixels wide: a slim diagonal band stands in for
+  // one here. Outline simplification must not collapse it into a line and hand
+  // back the mask's bounding box instead.
+  const logits = logitsFor(mapping, (p) => Math.abs(p.x - p.y) < 4 && p.x > 60 && p.x < 260);
+  const segment = segmentationFromLogits(logits, GRID, mapping, { frameWidth: 400, frameHeight: 400 });
+  assert.ok(segment, 'expected a segmentation');
+  const bounds = segment!.bbox;
+  assert.ok(bounds.width > 150 && bounds.height > 150, 'the diagonal band spans the frame');
+  const area = polygonArea(segment!.polygon);
+  assert.ok(
+    area < segment!.area * 2,
+    `outline area ${Math.round(area)} should follow the ${Math.round(segment!.area)} px mask, not its ${Math.round(bounds.width * bounds.height)} px bounding box`,
+  );
+});
+
 test('the component nearest the tracked centre is selected when a second blob appears', () => {
   const roi = { x: 0, y: 0, width: 400, height: 400 };
   const mapping = mappingFor(roi, SIZE);

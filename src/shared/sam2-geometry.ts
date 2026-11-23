@@ -422,6 +422,85 @@ export interface Segmentation {
   componentRatio: number;
 }
 
+/** A four-point box around the mask: axis-aligned, or fitted along the principal axis when the mask is slim. */
+function boxFromMask(binary: MaskBinaryGrid): MotionPoint[] | null {
+  let count = 0;
+  let minX = binary.width;
+  let minY = binary.height;
+  let maxX = -1;
+  let maxY = -1;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumYY = 0;
+  let sumXY = 0;
+  for (let y = 0; y < binary.height; y++) {
+    for (let x = 0; x < binary.width; x++) {
+      if (!binary.mask[y * binary.width + x]) continue;
+      count++;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      sumX += x;
+      sumY += y;
+      sumXX += x * x;
+      sumYY += y * y;
+      sumXY += x * y;
+    }
+  }
+  if (!count || maxX < minX || maxY < minY) return null;
+  if (maxX - minX < 1 && maxY - minY < 1) return null;
+  // Half a cell of padding keeps the mask's edge pixels inside the outline.
+  const pad = 0.5;
+  const boxWidth = maxX - minX + 1;
+  const boxHeight = maxY - minY + 1;
+  const fill = count / Math.max(1, boxWidth * boxHeight);
+  if (fill >= 0.55) {
+    return [
+      binary.toSource(minX - pad, minY - pad),
+      binary.toSource(maxX + 1 + pad, minY - pad),
+      binary.toSource(maxX + 1 + pad, maxY + 1 + pad),
+      binary.toSource(minX - pad, maxY + 1 + pad),
+    ];
+  }
+  // A slim mask (a rocket body is a few cells wide) is poorly described by an
+  // axis-aligned box: fit the box to the mask's principal axis so it keeps the
+  // object's width and orientation.
+  const cx = sumX / count;
+  const cy = sumY / count;
+  const vxx = sumXX / count - cx * cx;
+  const vyy = sumYY / count - cy * cy;
+  const vxy = sumXY / count - cx * cy;
+  const angle = 0.5 * Math.atan2(2 * vxy, vxx - vyy);
+  const ux = { x: Math.cos(angle), y: Math.sin(angle) };
+  const uy = { x: -ux.y, y: ux.x };
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (let y = 0; y < binary.height; y++) {
+    for (let x = 0; x < binary.width; x++) {
+      if (!binary.mask[y * binary.width + x]) continue;
+      const u = (x - cx) * ux.x + (y - cy) * ux.y;
+      const v = (x - cx) * uy.x + (y - cy) * uy.y;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+  }
+  if (maxU - minU < 1 || maxV - minV < 1) return null;
+  const corner = (u: number, v: number) =>
+    binary.toSource(cx + ux.x * u + uy.x * v, cy + ux.y * u + uy.y * v);
+  return [
+    corner(minU - pad, minV - pad),
+    corner(maxU + pad, minV - pad),
+    corner(maxU + pad, maxV + pad),
+    corner(minU - pad, maxV + pad),
+  ];
+}
+
 /** Turn mask logits into a simplified source-space polygon. */
 export function segmentationFromLogits(
   logits: Float32Array,
@@ -453,34 +532,21 @@ export function segmentationFromLogits(
   }
   let polygon = simplified;
   if (polygon.length < 3 || polygonArea(polygon) < area * 0.6) {
+    // A slim object (a rocket body is only a few mask pixels wide) can lose its
+    // width to the outline tolerance. Retry at a fine tolerance before falling
+    // back to the mask extent, which is far wider than the object itself.
+    const fine = sourceChain.length >= 4 ? simplify(sourceChain, 0.25) : [];
+    if (fine.length >= 3 && polygonArea(fine) > polygonArea(polygon)) polygon = fine;
+  }
+  if (polygon.length < 3 || polygonArea(polygon) < area * 0.6) {
     // The contour lost the shape the mask actually has (a tracing failure, a
     // thin bridge or a hole). The mask extent is still correct, so keep
-    // tracking with its bounding rectangle rather than a partial outline.
-    let minX = binary.width;
-    let minY = binary.height;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < binary.height; y++) {
-      for (let x = 0; x < binary.width; x++) {
-        if (!binary.mask[y * binary.width + x]) continue;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-    if (maxX < minX || maxY < minY) return null;
-    const x0 = mapping.roi.x + (minX / binary.width) * mapping.roi.width;
-    const x1 = mapping.roi.x + ((maxX + 1) / binary.width) * mapping.roi.width;
-    const y0 = mapping.roi.y + (minY / binary.height) * mapping.roi.height;
-    const y1 = mapping.roi.y + ((maxY + 1) / binary.height) * mapping.roi.height;
-    if (x1 - x0 < 1 || y1 - y0 < 1) return null;
-    polygon = [
-      { x: x0, y: y0 },
-      { x: x1, y: y0 },
-      { x: x1, y: y1 },
-      { x: x0, y: y1 },
-    ];
+    // tracking with a box fitted to the mask pixels along their principal
+    // axis: a slim object keeps its width and its orientation instead of
+    // being widened by an axis-aligned bounding box.
+    const box = boxFromMask(binary);
+    if (!box) return null;
+    polygon = box;
   }
   const centroid = polygonCentroid(polygon);
   const bounds = polygonBounds(polygon);
