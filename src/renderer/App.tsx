@@ -15,6 +15,7 @@ import ExperimentsPage from './pages/Experiments';
 import DataLogPage from './pages/DataLog';
 import AnalysisPage from './pages/Analysis';
 import ComparePage from './pages/Compare';
+import KeyframesPage from './pages/Keyframes';
 import ComponentsPage from './pages/Components';
 import SensorsPage from './pages/Sensors';
 import RevisionsPage from './pages/Revisions';
@@ -38,6 +39,7 @@ const PAGE_ROUTES: Record<string, { nav: string; render: () => React.ReactNode }
   datalog: { nav: 'datalog', render: () => <DataLogPage /> },
   analysis: { nav: 'analysis', render: () => <AnalysisPage /> },
   compare: { nav: 'compare', render: () => <ComparePage /> },
+  keyframes: { nav: 'keyframes', render: () => <KeyframesPage /> },
   components: { nav: 'components', render: () => <ComponentsPage /> },
   sensors: { nav: 'sensors', render: () => <SensorsPage /> },
   revisions: { nav: 'revisions', render: () => <RevisionsPage /> },
@@ -66,6 +68,7 @@ const NAV_PATHS: Record<string, string> = {
   datalog: '#/datalog',
   analysis: '#/analysis',
   compare: '#/compare',
+  keyframes: '#/keyframes',
   documents: '#/documents',
   issues: '#/issues',
   reports: '#/reports',

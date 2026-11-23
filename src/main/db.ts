@@ -576,6 +576,25 @@ CREATE INDEX IF NOT EXISTS idx_finance_project ON finance_entries(project_id, oc
 CREATE INDEX IF NOT EXISTS idx_finance_kind ON finance_entries(project_id, kind, occurred_on DESC);
 `,
   },
+  {
+    version: 5,
+    name: 'reusable manual keyframe video analyses',
+    sql: `
+CREATE TABLE IF NOT EXISTS keyframe_sets (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  media_kind TEXT DEFAULT 'video',
+  media_path TEXT DEFAULT '',
+  data_json TEXT DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_keyframe_sets_project ON keyframe_sets(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_keyframe_sets_media ON keyframe_sets(media_path);
+`,
+  },
 ];
 
 export interface Db {

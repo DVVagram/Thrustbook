@@ -53,10 +53,13 @@ import {
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, updateStatus } from './updates';
 import { dataDir, documentsDir, examplesRoot, isInside, safeFileName, setWorkspaceMode, uniquePath, workspaceMode } from './paths';
 import { deleteExamplesWorkspace, examplesStatus } from './examples';
+import { isKnownMediaPath, mediaUrl, rememberMediaPath } from './media';
+import { getKeyframeSet, listKeyframeSets, removeKeyframeSet, saveKeyframeSet } from './keyframes';
 import { DEFAULT_STAGES } from '../shared/constants';
 import { newId, nowIso } from './repo';
 
 void newId;
+void rememberMediaPath;
 
 const pickedPaths = new Set<string>();
 
@@ -81,7 +84,10 @@ async function handlePickOpen(payload: any, win: BrowserWindow | null) {
     filters: fileFilters(payload?.filters),
   });
   if (result.canceled) return { canceled: true, paths: [] };
-  result.filePaths.forEach((p) => pickedPaths.add(path.resolve(p)));
+  result.filePaths.forEach((p) => {
+    pickedPaths.add(path.resolve(p));
+    rememberMediaPath(p);
+  });
   return { canceled: false, paths: result.filePaths };
 }
 
@@ -539,6 +545,34 @@ const handlers: Record<string, Handler> = {
       if (picked.canceled || !picked.path) return { canceled: true };
       return { canceled: false, ...(await moveStorage(picked.path)) };
     });
+  },
+
+  'keyframes.list': (payload: any) => listKeyframeSets(payload?.projectId ?? ''),
+  'keyframes.get': (payload: any) => getKeyframeSet(payload?.id),
+  'keyframes.save': (payload: any) => saveKeyframeSet(payload ?? {}),
+  'keyframes.remove': (payload: any) => removeKeyframeSet(payload?.id),
+  'keyframes.mediaUrl': (payload: any) => {
+    if (typeof payload?.path !== 'string' || !payload.path.trim()) throw new Error('A video path is required');
+    const filePath = path.resolve(payload.path);
+    if (!isKnownMediaPath(filePath)) throw new Error('This video is not referenced by a saved keyframe set');
+    if (!fs.existsSync(filePath)) throw new Error('The selected video file is missing. Relink it to continue.');
+    rememberMediaPath(filePath);
+    const stat = fs.statSync(filePath);
+    return { url: mediaUrl(filePath), path: filePath, name: path.basename(filePath), size: stat.size, exists: true };
+  },
+  'keyframes.relink': async (payload: any, win) => {
+    const picked = await handlePickOpen(
+      {
+        title: 'Relink source video',
+        filters: [{ name: 'Videos', extensions: ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'mkv', 'avi'] }],
+      },
+      win,
+    );
+    if (picked.canceled || !picked.paths[0]) return { canceled: true };
+    const filePath = picked.paths[0];
+    rememberMediaPath(filePath);
+    const stat = fs.statSync(filePath);
+    return { canceled: false, path: filePath, name: path.basename(filePath), url: mediaUrl(filePath), size: stat.size };
   },
 
   'updates.status': () => updateStatus(),

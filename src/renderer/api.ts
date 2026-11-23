@@ -114,6 +114,13 @@ export const api = {
   integrity: () => call<any>('storage.integrity'),
   moveStorage: () => call<any>('storage.move'),
 
+  keyframeSets: (projectId: string) => call<any[]>('keyframes.list', { projectId }),
+  keyframeSet: (id: string) => call<any>('keyframes.get', { id }),
+  saveKeyframeSet: (payload: any) => call<any>('keyframes.save', payload),
+  removeKeyframeSet: (id: string) => call('keyframes.remove', { id }),
+  keyframeMediaUrl: (path: string) => call<any>('keyframes.mediaUrl', { path }),
+  relinkKeyframeMedia: () => call<any>('keyframes.relink'),
+
   updateStatus: () => call<any>('updates.status'),
   checkUpdates: () => call<any>('updates.check'),
   downloadUpdate: () => call<any>('updates.download'),

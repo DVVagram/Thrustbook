@@ -24,6 +24,7 @@ const PAGES = [
   'datalog',
   'analysis',
   'compare',
+  'keyframes',
   'documents',
   'issues',
   'reports',
