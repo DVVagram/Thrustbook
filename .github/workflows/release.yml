@@ -44,6 +44,9 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.rpm
+            release/*.tar.gz
             release/*.dmg
+            release/*.zip
             release/latest*.yml
           if-no-files-found: ignore

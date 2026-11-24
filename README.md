@@ -183,9 +183,9 @@ If npm is configured to skip lifecycle scripts, Electron's binary must be instal
 ## 6. Packaging
 
 ```bash
-npm run dist:win     # release/Thrustbook-Setup-<version>-x64.exe (NSIS)
-npm run dist:linux   # AppImage + .deb
-npm run dist:mac     # DMG (x64 + arm64)
+npm run dist:win     # NSIS installer, portable .exe and .zip
+npm run dist:linux   # AppImage, .deb, .rpm and .tar.gz
+npm run dist:mac     # DMG and .zip (x64 + arm64)
 ```
 
 `electron-builder.yml` defines the targets. The Windows installer is per-user by default, allows
@@ -200,8 +200,9 @@ credentials the DMG is unsigned and Gatekeeper will warn.
 
 `.github/workflows/check.yml` runs `npm run check` (typecheck, build and the 1120px layout audit)
 on every push to `main` and every pull request. `.github/workflows/release.yml` builds all three
-platforms on a version tag (`v1.2.3`) and publishes the installers plus `latest.yml` /
-`latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
+platforms on a version tag (`v1.2.3`) and publishes every installer type (NSIS `.exe`, portable
+`.exe` and `.zip` on Windows; `.AppImage`, `.deb`, `.rpm` and `.tar.gz` on Linux; `.dmg` and `.zip` on
+macOS) plus `latest.yml` / `latest-linux.yml` / `latest-mac.yml` to GitHub Releases.
 
 1. The update feed is configured for `DVVagram/Thrustbook` in `electron-builder.yml`
    (`publish.owner` / `publish.repo`); CI overrides it from the repository context. New profiles
