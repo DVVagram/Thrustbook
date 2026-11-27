@@ -558,8 +558,19 @@ export function removeRecord(entity: string, id: string): RemoveResult {
     shopping_list_item: [],
   };
 
+  /** References that point at the record without owning it; they are cleared, not deleted. */
+  const childNulls: Record<string, { table: string; column: string }[]> = {
+    component: [
+      { table: 'inventory_items', column: 'component_id' },
+      { table: 'shopping_list_items', column: 'component_id' },
+    ],
+  };
+
   const children = childDeletes[entity] ?? [];
   db.transaction(() => {
+    for (const ref of childNulls[entity] ?? []) {
+      db.run(`UPDATE ${ref.table} SET ${ref.column} = '' WHERE ${ref.column} = ?`, [id]);
+    }
     for (const child of children) {
       if (child.column.includes('IN (SELECT')) {
         const res = db.run(`DELETE FROM ${child.table} WHERE ${child.column.replace('dataset_id IN', 'dataset_id IN')}`, [id]);

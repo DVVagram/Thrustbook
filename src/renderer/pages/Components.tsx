@@ -71,6 +71,29 @@ export default function ComponentsPage() {
     }
   };
 
+  const removeComponent = async (component: any) => {
+    if (!component?.id) return;
+    const ok = await confirm({
+      title: 'Delete component?',
+      message: component.name,
+      details:
+        'The component, its installation history and its place in electronics configurations are removed. Inventory stock and shopping list entries created from it stay as their own records.',
+      confirmLabel: 'Delete component',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.remove('component', component.id);
+      if (selectedId === component.id) setSelectedId(null);
+      components.reload();
+      configs.reload();
+      refresh();
+      notify('Component deleted', 'success');
+    } catch (err: any) {
+      notify(err.message, 'error');
+    }
+  };
+
   const saveConfig = async () => {
     try {
       let config = configEditing;
@@ -234,6 +257,21 @@ export default function ComponentsPage() {
                 },
                 { key: 'firmware', label: 'Firmware', mono: true },
                 { key: 'updated_at', label: 'Updated', render: (c) => fmtDate(c.updated_at), width: '110px' },
+                {
+                  key: 'actions',
+                  label: '',
+                  align: 'right',
+                  render: (c) => (
+                    <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-btn" title="Edit" onClick={() => setEditing({ ...c, __entity: 'component' })}>
+                        <Icon name="edit" size={14} />
+                      </button>
+                      <button className="icon-btn danger" title="Delete component" onClick={() => removeComponent(c)}>
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  ),
+                },
               ]}
               empty={<EmptyState title="No components" message="Record microcontrollers, sensors, batteries, power and structural hardware." icon="chip" />}
             />
@@ -255,9 +293,14 @@ export default function ComponentsPage() {
                       <div className="panel-title">{selected.data.component.name}</div>
                       <Badge>{selected.data.component.category}</Badge>
                     </div>
-                    <Button size="sm" icon="edit" onClick={() => setEditing({ ...selected.data.component, __entity: 'component' })}>
-                      Edit
-                    </Button>
+                    <div className="toolbar-inline">
+                      <Button size="sm" icon="edit" onClick={() => setEditing({ ...selected.data.component, __entity: 'component' })}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="danger" icon="trash" onClick={() => removeComponent(selected.data.component)}>
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                   <KeyValue
                     columns={1}
