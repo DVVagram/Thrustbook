@@ -654,8 +654,8 @@ export function buildReportHtml(spec: ReportSpec): { html: string; title: string
         'Inventory',
         components.length
           ? table(
-              ['Component', 'Category', 'Manufacturer', 'Model', 'Serial', 'Firmware', 'Notes'],
-              components.map((c) => [c.name, c.category, c.manufacturer, c.model, c.serial, c.firmware, c.notes]),
+              ['Component', 'Category', 'Manufacturer', 'Model', 'Serial', 'Quantity', 'Unit price', 'Currency', 'Firmware', 'Notes'],
+              components.map((c) => [c.name, c.category, c.manufacturer, c.model, c.serial, c.quantity, c.unit_price, c.currency, c.firmware, c.notes]),
             )
           : '<p class="muted">No components recorded.</p>',
       );

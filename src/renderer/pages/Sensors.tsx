@@ -76,7 +76,13 @@ export default function SensorsPage() {
           title="Sensor database"
           actions={
             <div className="toolbar-inline">
-              <Select value={type} onChange={setType} placeholder="All types" options={SENSOR_TYPES.map((t) => ({ value: t, label: t }))} />
+              <Select
+                value={type}
+                onChange={setType}
+                placeholder="All types"
+                addNew="sensor.type"
+                options={SENSOR_TYPES.map((t) => ({ value: t, label: t }))}
+              />
               <SearchInput value={search} onChange={setSearch} placeholder="Search sensors…" />
             </div>
           }

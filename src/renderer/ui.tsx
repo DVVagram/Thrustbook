@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { api } from './api';
 
 /* ---------------------------------------------------------------- */
 /* Icons                                                             */
@@ -138,6 +139,15 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return <textarea className={`input textarea ${className}`} {...rest} />;
 }
 
+const ADD_NEW_VALUE = '__thrustbook_add_new__';
+
+/**
+ * A dropdown backed by static suggestions plus the application-wide option list.
+ * Supplying `addNew` shows an “Add new…” entry; the entered value is stored once
+ * and then offered by every dropdown that shares the same scope key.
+ * A stored value that is missing from the suggestions is still shown, so saved
+ * records never appear to have lost a selection.
+ */
 export function Select({
   options,
   value,
@@ -146,6 +156,8 @@ export function Select({
   className = '',
   disabled,
   children,
+  addNew,
+  addNewLabel = 'Add new…',
 }: {
   options: { value: string; label: string }[];
   value: string;
@@ -154,17 +166,122 @@ export function Select({
   className?: string;
   disabled?: boolean;
   children?: React.ReactNode;
+  addNew?: string;
+  addNewLabel?: string;
 }) {
+  const [extra, setExtra] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newValue, setNewValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!addNew) {
+      setExtra([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .list('option_value', { where: { scope_key: addNew }, limit: 2000, orderBy: 'value', order: 'asc' })
+      .then((rows) => {
+        if (!cancelled) setExtra([...new Set(rows.map((row: any) => String(row.value ?? '')).filter(Boolean))]);
+      })
+      .catch(() => {
+        if (!cancelled) setExtra([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addNew]);
+
+  const merged = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const option of options) seen.set(option.value, option.label);
+    for (const item of extra) if (!seen.has(item)) seen.set(item, item);
+    if (value && !seen.has(value)) seen.set(value, value);
+    return [...seen.entries()].map(([optionValue, label]) => ({ value: optionValue, label }));
+  }, [options, extra, value]);
+
+  const commit = async () => {
+    const entered = newValue.trim();
+    if (!entered || !addNew) return;
+    if (merged.some((option) => option.value === entered)) {
+      onChange(entered);
+      setAdding(false);
+      setNewValue('');
+      return;
+    }
+    setSaving(true);
+    setAddError(null);
+    try {
+      await api.create('option_value', { scope_key: addNew, value: entered });
+      setExtra((prev) => [...prev, entered]);
+      onChange(entered);
+      setAdding(false);
+      setNewValue('');
+    } catch (err: any) {
+      setAddError(err?.message ?? String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <select className={`input select ${className}`} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
-      {placeholder !== undefined && <option value="">{placeholder}</option>}
-      {children}
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className={`input select ${className}`}
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === ADD_NEW_VALUE) {
+            setNewValue('');
+            setAddError(null);
+            setAdding(true);
+            return;
+          }
+          onChange(e.target.value);
+        }}
+        disabled={disabled}
+      >
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {children}
+        {merged.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+        {addNew && (
+          <option value={ADD_NEW_VALUE}>
+            ＋ {addNewLabel}
+          </option>
+        )}
+      </select>
+      {adding && addNew && (
+        <Modal
+          title={addNewLabel}
+          size="sm"
+          onClose={() => {
+            setAdding(false);
+            setAddError(null);
+          }}
+          footer={
+            <>
+              <Button onClick={() => setAdding(false)}>Cancel</Button>
+              <Button variant="primary" icon="plus" onClick={commit} disabled={saving || !newValue.trim()}>
+                {saving ? 'Saving…' : 'Add option'}
+              </Button>
+            </>
+          }
+        >
+          <div className="stack">
+            <Field label="New option" hint="Available in every dropdown of this kind, in every project">
+              <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} autoFocus placeholder="Type a new value…" />
+            </Field>
+            <div className="muted small">This adds the option to the shared list. Existing records keep the value they were saved with.</div>
+            {addError && <div className="error-box">{addError}</div>}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

@@ -68,6 +68,12 @@ export const FINANCE_CATEGORIES = [
 
 export const PAYMENT_METHODS = ['Card', 'Bank transfer', 'Cash', 'PayPal', 'Other'];
 
+export const SHOPPING_PRIORITIES = ['Low', 'Normal', 'High', 'Critical'];
+
+export const SHOPPING_STATUSES = ['Needed', 'Quoted', 'Ordered', 'Received', 'Cancelled'];
+
+export const COMPONENT_UNITS = ['pcs', 'm', 'cm', 'mm', 'kg', 'g', 'L', 'mL', 'set', 'sheet'];
+
 export interface InventoryCurrencySummary {
   currency: string;
   itemCount: number;
@@ -125,6 +131,33 @@ export function summarizeInventory(items: { quantity?: unknown; unit_cost?: unkn
   return [...groups.values()].sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
+export function shoppingLineTotal(item: { quantity?: unknown; estimated_unit_cost?: unknown }): number {
+  const quantity = numericValue(item.quantity) ?? 0;
+  const unitCost = numericValue(item.estimated_unit_cost) ?? 0;
+  return roundMoney(Math.max(0, quantity) * Math.max(0, unitCost));
+}
+
+export function summarizeShopping(
+  items: { quantity?: unknown; estimated_unit_cost?: unknown; currency?: unknown; status?: unknown }[],
+): { currency: string; itemCount: number; totalValue: number }[] {
+  const groups = new Map<string, { currency: string; itemCount: number; totalValue: number }>();
+  for (const item of items) {
+    if (['Cancelled', 'Received'].includes(String(item.status))) continue;
+    const currency = normalizeCurrency(item.currency);
+    const group = groups.get(currency) ?? { currency, itemCount: 0, totalValue: 0 };
+    group.itemCount += 1;
+    group.totalValue = roundMoney(group.totalValue + shoppingLineTotal(item));
+    groups.set(currency, group);
+  }
+  return [...groups.values()].sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+export function componentValue(component: { quantity?: unknown; unit_price?: unknown }): number {
+  const quantity = numericValue(component.quantity) ?? 0;
+  const unitPrice = numericValue(component.unit_price) ?? 0;
+  return roundMoney(Math.max(0, quantity) * Math.max(0, unitPrice));
+}
+
 export function summarizeFinance(entries: { kind?: unknown; amount?: unknown; currency?: unknown }[]): FinanceCurrencySummary[] {
   const groups = new Map<string, FinanceCurrencySummary>();
   for (const entry of entries) {
@@ -149,6 +182,19 @@ export function validateInventoryItem(item: Record<string, any>): string[] {
   if (quantity === null || quantity < 0) errors.push('Quantity must be zero or greater');
   if (unitCost === null || unitCost < 0) errors.push('Unit cost must be zero or greater');
   if (reorder === null || reorder < 0) errors.push('Reorder level must be zero or greater');
+  if (!/^[A-Z]{3}$/.test(normalizeCurrency(item.currency))) errors.push('Currency must be a three-letter code such as USD');
+  return errors;
+}
+
+export function validateShoppingItem(item: Record<string, any>): string[] {
+  const errors: string[] = [];
+  if (!String(item.name ?? '').trim()) errors.push('Entry name is required');
+  const quantity = numericValue(item.quantity);
+  const rawEstimate = item.estimated_unit_cost;
+  const estimate = rawEstimate === undefined || rawEstimate === null || rawEstimate === '' ? 0 : numericValue(rawEstimate);
+  if (quantity === null) errors.push('Quantity is required');
+  else if (quantity < 0) errors.push('Quantity must be zero or greater');
+  if (estimate === null || estimate < 0) errors.push('Estimated unit cost must be zero or greater');
   if (!/^[A-Z]{3}$/.test(normalizeCurrency(item.currency))) errors.push('Currency must be a three-letter code such as USD');
   return errors;
 }

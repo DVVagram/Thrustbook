@@ -18,7 +18,21 @@ export const TEMPLATE_TARGETS: { value: string; label: string; entity: string }[
   { value: 'test', label: 'Ground / experimental test', entity: 'test' },
   { value: 'flight', label: 'Flight', entity: 'flight' },
   { value: 'run', label: 'Experiment run', entity: 'run' },
+  { value: 'component', label: 'Component / electronics item', entity: 'component' },
+  { value: 'sensor', label: 'Sensor', entity: 'sensor' },
+  { value: 'inventory_item', label: 'Inventory item', entity: 'inventory_item' },
+  { value: 'shopping_list_item', label: 'Shopping list entry', entity: 'shopping_list_item' },
+  { value: 'finance_entry', label: 'Finance entry', entity: 'finance_entry' },
+  { value: 'experiment', label: 'Experiment', entity: 'experiment' },
+  { value: 'revision', label: 'Rocket revision', entity: 'revision' },
+  { value: 'electronics_config', label: 'Electronics configuration', entity: 'electronics_config' },
+  { value: 'calibration', label: 'Calibration record', entity: 'calibration' },
+  { value: 'document', label: 'Document metadata', entity: 'document' },
+  { value: 'issue', label: 'Issue or observation', entity: 'issue' },
 ];
+
+/** Record types whose fields are chosen once per record instead of a per-record template picker. */
+export const PER_RECORD_TEMPLATE_ENTITIES = ['test', 'flight', 'run'];
 
 export const ENTRY_FIELD_TYPES: { value: EntryFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
@@ -31,10 +45,19 @@ export const ENTRY_FIELD_TYPES: { value: EntryFieldType; label: string }[] = [
   { value: 'datetime', label: 'Date and time' },
 ];
 
-export const TEMPLATE_ENTITIES = ['test', 'flight', 'run'];
+export const TEMPLATE_ENTITIES = TEMPLATE_TARGETS.map((t) => t.entity);
 
 export function targetForEntity(entity: string): string | null {
   return TEMPLATE_TARGETS.find((t) => t.entity === entity)?.value ?? null;
+}
+
+/** Entities that use one shared default field sheet rather than a per-record template. */
+export function usesDefaultTemplate(entity: string): boolean {
+  return isTemplateEntity(entity) && !PER_RECORD_TEMPLATE_ENTITIES.includes(entity);
+}
+
+export function templateScopeKey(entity: string, fieldKey: string): string {
+  return `${entity}.template.${fieldKey}`;
 }
 
 export function targetLabel(target: string): string {

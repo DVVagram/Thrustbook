@@ -12,7 +12,16 @@ import {
   TEST_CATEGORIES,
   TEST_STATUSES,
 } from '../shared/constants';
-import { CURRENCIES, FINANCE_CATEGORIES, FINANCE_KINDS, INVENTORY_CATEGORIES, PAYMENT_METHODS } from '../shared/operations';
+import {
+  COMPONENT_UNITS,
+  CURRENCIES,
+  FINANCE_CATEGORIES,
+  FINANCE_KINDS,
+  INVENTORY_CATEGORIES,
+  PAYMENT_METHODS,
+  SHOPPING_PRIORITIES,
+  SHOPPING_STATUSES,
+} from '../shared/operations';
 
 const currencyOptions = CURRENCIES.map((currency) => ({ value: currency, label: currency }));
 
@@ -33,6 +42,8 @@ export interface FieldDef {
   refWhere?: Record<string, any>;
   hide?: boolean;
   mono?: boolean;
+  /** Shared option list key; defaults to `<entity>.<field>` for select fields. */
+  optionsKey?: string;
 }
 
 export const opts = (values: string[]) => values.map((v) => ({ value: v, label: v }));
@@ -181,9 +192,14 @@ export const FORMS: Record<string, { title: string; singular: string; fields: Fi
     fields: [
       { key: 'name', label: 'Component name', required: true },
       { key: 'category', label: 'Category', type: 'select', options: opts(COMPONENT_CATEGORIES) },
-      { key: 'manufacturer', label: 'Manufacturer' },
+      { key: 'manufacturer', label: 'Manufacturer', type: 'select', options: [], optionsKey: 'manufacturer', hint: 'Saved manufacturers are shared across components and sensors' },
       { key: 'model', label: 'Model' },
       { key: 'serial', label: 'Serial / identifier' },
+      { key: 'quantity', label: 'Quantity', type: 'number', step: 'any', hint: 'How many of this piece the rocket uses or needs' },
+      { key: 'unit', label: 'Unit', type: 'select', options: opts(COMPONENT_UNITS), optionsKey: 'component.unit' },
+      { key: 'unit_price', label: 'Unit price', type: 'number', step: '0.01', hint: 'Price per unit for this rocket piece' },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions, optionsKey: '' },
+      { key: 'supplier', label: 'Supplier', type: 'select', options: [], optionsKey: 'supplier' },
       { key: 'firmware', label: 'Firmware version' },
       { key: 'specs', label: 'Technical specifications', type: 'textarea', full: true, rows: 3 },
       { key: 'configuration', label: 'Current configuration', type: 'textarea', full: true, rows: 2 },
@@ -199,12 +215,27 @@ export const FORMS: Record<string, { title: string; singular: string; fields: Fi
       { key: 'category', label: 'Category', type: 'select', options: opts(INVENTORY_CATEGORIES) },
       { key: 'sku', label: 'SKU / part number', mono: true },
       { key: 'quantity', label: 'Quantity on hand', type: 'number', required: true, step: 'any', hint: 'Count, length, mass or volume in the unit below' },
-      { key: 'unit', label: 'Unit', placeholder: 'pcs, m, kg, L…' },
+      { key: 'unit', label: 'Unit', type: 'select', options: opts(COMPONENT_UNITS) },
       { key: 'unit_cost', label: 'Unit cost', type: 'number', required: true, step: '0.01', hint: 'Cost per single unit, in the selected currency' },
-      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions },
-      { key: 'supplier', label: 'Supplier' },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions, optionsKey: '' },
+      { key: 'supplier', label: 'Supplier', type: 'select', options: [], optionsKey: 'supplier' },
       { key: 'location', label: 'Storage location', placeholder: 'e.g. Shelf B2, avionics box' },
       { key: 'reorder_level', label: 'Reorder level', type: 'number', step: 'any', hint: 'Show a low-stock warning at or below this quantity; 0 disables it' },
+      { key: 'notes', label: 'Notes', type: 'textarea', full: true, rows: 3 },
+    ],
+  },
+  shopping_list_item: {
+    title: 'Shopping list entry',
+    singular: 'shopping list entry',
+    fields: [
+      { key: 'name', label: 'Part or material', required: true, placeholder: 'e.g. 6-cell Li-ion pack' },
+      { key: 'quantity', label: 'Quantity to buy', type: 'number', required: true, step: 'any' },
+      { key: 'unit', label: 'Unit', type: 'select', options: opts(COMPONENT_UNITS), optionsKey: 'component.unit' },
+      { key: 'estimated_unit_cost', label: 'Estimated unit cost', type: 'number', step: '0.01', hint: 'Planning estimate; nothing is posted to finance' },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions, optionsKey: '' },
+      { key: 'supplier', label: 'Supplier', type: 'select', options: [], optionsKey: 'supplier' },
+      { key: 'priority', label: 'Priority', type: 'select', options: opts(SHOPPING_PRIORITIES) },
+      { key: 'status', label: 'Status', type: 'select', options: opts(SHOPPING_STATUSES) },
       { key: 'notes', label: 'Notes', type: 'textarea', full: true, rows: 3 },
     ],
   },
@@ -212,11 +243,11 @@ export const FORMS: Record<string, { title: string; singular: string; fields: Fi
     title: 'Finance entry',
     singular: 'finance entry',
     fields: [
-      { key: 'kind', label: 'Type', type: 'select', required: true, options: FINANCE_KINDS },
+      { key: 'kind', label: 'Type', type: 'select', required: true, options: FINANCE_KINDS, optionsKey: '' },
       { key: 'occurred_on', label: 'Date', type: 'date', required: true },
       { key: 'description', label: 'Description', required: true, full: true, placeholder: 'e.g. Static fire propellant and consumables' },
       { key: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', hint: 'Always positive; the type determines whether it adds or subtracts' },
-      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions },
+      { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions, optionsKey: '' },
       { key: 'category', label: 'Category', type: 'select', options: opts(FINANCE_CATEGORIES) },
       { key: 'counterparty', label: 'Paid to / received from' },
       { key: 'reference', label: 'Reference / invoice', mono: true },
@@ -239,7 +270,7 @@ export const FORMS: Record<string, { title: string; singular: string; fields: Fi
     fields: [
       { key: 'name', label: 'Sensor name', required: true },
       { key: 'type', label: 'Sensor type', type: 'select', options: opts(SENSOR_TYPES) },
-      { key: 'manufacturer', label: 'Manufacturer' },
+      { key: 'manufacturer', label: 'Manufacturer', type: 'select', options: [], optionsKey: 'manufacturer', hint: 'Shared with component manufacturers' },
       { key: 'model', label: 'Model' },
       { key: 'serial', label: 'Serial / identifier' },
       { key: 'range_min', label: 'Range minimum', type: 'number' },

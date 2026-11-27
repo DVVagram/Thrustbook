@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import { useApp } from './state';
 import { FieldDef, fieldsFor } from './forms';
-import { Checkbox, Field, Input, Select, Textarea } from './ui';
+import { Button, Checkbox, Field, Input, Select, Textarea } from './ui';
 import { fromLocalInput, toLocalInput } from './format';
 import {
   TemplateField,
   applyTemplateDefaults,
   normalizeTemplateFields,
   targetForEntity,
+  targetLabel,
+  templateScopeKey,
+  usesDefaultTemplate,
   validateTemplateValues,
 } from '../shared/templates';
 
@@ -74,6 +77,99 @@ function parseValues(value: any): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+function DefaultTemplateFields({
+  entity,
+  projectId,
+  value,
+  onChange,
+  disabled,
+}: {
+  entity: string;
+  projectId: string;
+  value: Record<string, any>;
+  onChange: (patch: Record<string, any>) => void;
+  disabled?: boolean;
+}) {
+  const { navigate } = useApp();
+  const [template, setTemplate] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .list('entry_template', {
+        where: { applies_to: entity, project_id: [projectId, ''] },
+        limit: 500,
+        orderBy: 'updated_at',
+        order: 'desc',
+      })
+      .then((rows) => {
+        if (cancelled) return;
+        const active = rows.filter((row: any) => !row.archived);
+        const local = active.find((row: any) => row.project_id === projectId && row.is_default) ?? active.find((row: any) => row.project_id === projectId);
+        const global = active.find((row: any) => !row.project_id && row.is_default) ?? active.find((row: any) => !row.project_id);
+        setTemplate(local ?? global ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entity, projectId]);
+
+  if (loading) return null;
+  const fields = template ? normalizeTemplateFields(template.fields ?? template.fields_json) : [];
+  const values = parseValues(value.custom_json);
+  const setValue = (field: TemplateField, raw: any) => onChange({ custom_json: { ...values, [field.key]: raw } });
+
+  if (!template || fields.length === 0) {
+    return (
+      <div className="template-section">
+        <div className="template-picker">
+          <div className="template-note muted small">
+            No extra fields are defined for “{targetLabel(targetForEntity(entity) ?? entity)}”. Add them once to the default field set and they appear on every new and existing
+            entry of this type.
+          </div>
+          <Button size="sm" icon="plus" onClick={() => navigate(`#/templates?entity=${entity}&new=1`)}>
+            Add default fields
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="template-section">
+      <div className="template-picker">
+        <div className="template-note muted small">
+          {fields.length} default field(s) from “{template.name}”. Edits to the field set apply to every entry of this type; values already saved stay with their record.
+        </div>
+        <Button size="sm" icon="edit" onClick={() => navigate(`#/templates?template=${template.id}`)}>
+          Edit default fields
+        </Button>
+      </div>
+      <div className="template-fields">
+        <div className="template-fields-head">
+          <span className="field-label">Default fields</span>
+          <span className="muted tiny">User-entered</span>
+        </div>
+        <div className="form-grid">
+          {fields.map((field) => (
+            <Field key={field.key} label={field.label} full={field.full} required={field.required} hint={field.help || (field.unit ? `Unit: ${field.unit}` : undefined)}>
+              {renderField(field, values[field.key], (v) => setValue(field, v), disabled, templateScopeKey(entity, field.key))}
+            </Field>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TemplateEntryFields({
@@ -182,7 +278,7 @@ function TemplateEntryFields({
                 required={field.required}
                 hint={field.help || (field.unit ? `Unit: ${field.unit}` : undefined)}
               >
-                {renderField(field, values[field.key], (v) => setValue(field, v), disabled)}
+                {renderField(field, values[field.key], (v) => setValue(field, v), disabled, templateScopeKey(entity, field.key))}
               </Field>
             ))}
           </div>
@@ -192,7 +288,7 @@ function TemplateEntryFields({
   );
 }
 
-function renderField(field: TemplateField, raw: any, onChange: (value: any) => void, disabled?: boolean) {
+function renderField(field: TemplateField, raw: any, onChange: (value: any) => void, disabled?: boolean, addNew?: string) {
   const unitSuffix = field.unit ? <span className="unit-suffix">{field.unit}</span> : null;
   switch (field.type) {
     case 'textarea':
@@ -207,7 +303,7 @@ function renderField(field: TemplateField, raw: any, onChange: (value: any) => v
             className="mono"
             value={raw ?? ''}
             disabled={disabled}
-            onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+            onChange={(e) => onChange(e.target.value)}
           />
           {unitSuffix}
         </div>
@@ -219,6 +315,7 @@ function renderField(field: TemplateField, raw: any, onChange: (value: any) => v
           onChange={onChange}
           disabled={disabled}
           placeholder="—"
+          addNew={addNew}
           options={(field.options ?? []).map((o) => ({ value: o, label: o }))}
         />
       );
@@ -255,9 +352,12 @@ export function RecordForm({
   const defs = fields ?? (entity ? fieldsFor(entity) : []);
   return (
     <>
-      {entity && targetForEntity(entity) && (
-        <TemplateEntryFields entity={entity} projectId={projectId} value={value} onChange={onChange} disabled={disabled} />
-      )}
+      {entity && targetForEntity(entity) &&
+        (usesDefaultTemplate(entity) ? (
+          <DefaultTemplateFields entity={entity} projectId={projectId} value={value} onChange={onChange} disabled={disabled} />
+        ) : (
+          <TemplateEntryFields entity={entity} projectId={projectId} value={value} onChange={onChange} disabled={disabled} />
+        ))}
       <div className="form-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
         {defs.map((field) => {
           if (field.hide) return null;
@@ -293,6 +393,7 @@ export function RecordForm({
                     options={(field.options ?? []).map((o) => (typeof o === 'string' ? { value: o, label: o } : o))}
                     disabled={disabled}
                     placeholder="—"
+                    addNew={field.optionsKey ?? `${entity}.${field.key}`}
                   />
                 </Field>
               );
@@ -305,7 +406,7 @@ export function RecordForm({
                     className="mono"
                     value={raw ?? ''}
                     disabled={disabled}
-                    onChange={(e) => onChange({ [field.key]: e.target.value === '' ? null : Number(e.target.value) })}
+                    onChange={(e) => onChange({ [field.key]: e.target.value })}
                   />
                 </Field>
               );

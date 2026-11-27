@@ -247,6 +247,8 @@ export async function createBackup(label = '', kind: BackupInfo['kind'] = 'manua
     'entry_templates',
     'inventory_items',
     'finance_entries',
+    'shopping_list_items',
+    'option_values',
   ]) {
     try {
       counts[table] = Number((db.get<any>(`SELECT COUNT(*) AS c FROM ${table}`) as any)?.c ?? 0);
@@ -494,6 +496,7 @@ function projectTableRows(projectId: string): Record<string, any[]> {
     'entry_templates',
     'inventory_items',
     'finance_entries',
+    'shopping_list_items',
     'reports',
     'activity',
   ];
@@ -702,6 +705,7 @@ export async function importProject(archivePath: string, options: { rename?: str
       insertRows('entry_templates', tables.entry_templates ?? []);
       insertRows('inventory_items', tables.inventory_items ?? []);
       insertRows('finance_entries', tables.finance_entries ?? []);
+      insertRows('shopping_list_items', tables.shopping_list_items ?? []);
       insertRows('reports', tables.reports ?? []);
       insertRows('activity', tables.activity ?? []);
       db.run(

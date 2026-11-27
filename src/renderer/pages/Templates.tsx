@@ -6,6 +6,7 @@ import { fmtDateTime } from '../format';
 import {
   ENTRY_FIELD_TYPES,
   EntryFieldType,
+  PER_RECORD_TEMPLATE_ENTITIES,
   TEMPLATE_TARGETS,
   TemplateField,
   displayCustomValue,
@@ -42,9 +43,13 @@ export default function TemplatesPage() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<any>(null);
 
+  const fieldSetTab = 'field-sets';
+  const isFieldSet = (t: any) => !PER_RECORD_TEMPLATE_ENTITIES.includes(t.applies_to);
+
   const rows = useMemo(() => {
     return (templates.data ?? []).filter((t: any) => {
-      if (tab !== 'all' && t.applies_to !== tab) return false;
+      if (tab === fieldSetTab && !isFieldSet(t)) return false;
+      if (tab !== 'all' && tab !== fieldSetTab && t.applies_to !== tab) return false;
       if (!search.trim()) return true;
       const term = search.toLowerCase();
       return `${t.name} ${t.description} ${t.category}`.toLowerCase().includes(term);
@@ -52,13 +57,22 @@ export default function TemplatesPage() {
   }, [templates.data, tab, search]);
 
   useEffect(() => {
-    if (!route.query.template || !templates.data) return;
-    const match = templates.data.find((t: any) => t.id === route.query.template);
-    if (match) setSelected(match);
-  }, [route.query.template, templates.data]);
+    if (!templates.data) return;
+    if (route.query.template) {
+      const match = templates.data.find((t: any) => t.id === route.query.template);
+      if (match) setSelected(match);
+    }
+    if (route.query.new === '1') {
+      const requested = route.query.entity;
+      const target = requested ? requested : tab !== 'all' && tab !== fieldSetTab ? tab : 'component';
+      setDraft(emptyDraft(target));
+      navigate('#/templates');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.query.template, route.query.new, route.query.entity, templates.data]);
 
   const startCreate = () => {
-    setDraft(emptyDraft(tab === 'all' ? 'test' : tab));
+    setDraft(emptyDraft(tab === fieldSetTab ? 'component' : tab === 'all' ? 'test' : tab));
   };
 
   const startEdit = (row: any) => {
@@ -83,6 +97,7 @@ export default function TemplatesPage() {
         applies_to: row.applies_to,
         category: row.category ?? '',
         fields_json: fields,
+        is_default: PER_RECORD_TEMPLATE_ENTITIES.includes(row.applies_to) ? 0 : 1,
       });
       templates.reload();
       notify('Template duplicated', 'success');
@@ -103,6 +118,7 @@ export default function TemplatesPage() {
         applies_to: draft.applies_to,
         category: draft.category,
         fields_json: fields,
+        is_default: PER_RECORD_TEMPLATE_ENTITIES.includes(draft.applies_to) ? 0 : 1,
         archived: 0,
       };
       if (draft.id) await api.update('entry_template', draft.id, payload);
@@ -166,7 +182,7 @@ export default function TemplatesPage() {
     <div className="page">
       <PageHeader
         title="Entry Templates"
-        subtitle={`${project?.name ?? ''} · reusable custom fields for ground tests, flights and experiment runs`}
+        subtitle={`${project?.name ?? ''} · reusable custom fields for every record type, plus per-record templates for tests, flights and runs`}
         actions={
           <>
             <Button icon="refresh" onClick={() => templates.reload()}>
@@ -185,11 +201,16 @@ export default function TemplatesPage() {
           onChange={setTab}
           tabs={[
             { key: 'all', label: 'All templates', count: templates.data?.length ?? 0 },
-            ...TEMPLATE_TARGETS.map((t) => ({
+            ...TEMPLATE_TARGETS.filter((t) => PER_RECORD_TEMPLATE_ENTITIES.includes(t.value)).map((t) => ({
               key: t.value,
               label: t.label,
               count: (templates.data ?? []).filter((x: any) => x.applies_to === t.value).length,
             })),
+            {
+              key: fieldSetTab,
+              label: 'Record field sets',
+              count: (templates.data ?? []).filter(isFieldSet).length,
+            },
           ]}
         />
         <span className="status-spacer" />
@@ -207,6 +228,7 @@ export default function TemplatesPage() {
                 render: (t) => (
                   <span className="list-title">
                     {t.name} {!t.project_id && <Badge tone="warn">global</Badge>}
+                    {isFieldSet(t) && <Badge tone="ok">default fields</Badge>}
                   </span>
                 ),
               },
@@ -320,8 +342,15 @@ export default function TemplatesPage() {
             <Panel title="How templates work">
               <div className="stack muted small">
                 <p>
-                  A template defines extra fields for one record type. Apply it to a ground test, flight or experiment run and those fields appear in the record
-                  form and are saved with the record.
+                  A template defines extra fields for one record type. Ground tests, flights and experiment runs choose a template per record; every other record
+                  type (components, sensors, inventory, finance, documents and more) uses one default field set that appears on every entry of that type.
+                </p>
+                <p>
+                  Add a field to a default field set once — for example “flight heritage” on components — and every component form and record shows it without
+                  adding it entry by entry. Values already saved stay with their own record.
+                </p>
+                <p>
+                  Selection fields offer “Add new…” in every dropdown; the option is stored once and offered system-wide, including in records created later.
                 </p>
                 <p>
                   Choose an <strong>auto-apply category</strong> to attach the template automatically when a new record uses that category (for example a

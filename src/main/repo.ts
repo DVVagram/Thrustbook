@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { getDb, type Db } from './db';
 import { ENTITY_LABELS } from '../shared/constants';
-import { isTemplateEntity, normalizeTemplateFields, validateTemplateValues } from '../shared/templates';
-import { normalizeCurrency, validateFinanceEntry, validateInventoryItem } from '../shared/operations';
+import { isTemplateEntity, normalizeTemplateFields, templateScopeKey, usesDefaultTemplate, validateTemplateValues } from '../shared/templates';
+import { normalizeCurrency, validateFinanceEntry, validateInventoryItem, validateShoppingItem } from '../shared/operations';
 
 export const TABLES: Record<string, string> = {
   project: 'projects',
@@ -35,6 +35,8 @@ export const TABLES: Record<string, string> = {
   entry_template: 'entry_templates',
   inventory_item: 'inventory_items',
   finance_entry: 'finance_entries',
+  shopping_list_item: 'shopping_list_items',
+  option_value: 'option_values',
   report: 'reports',
   activity: 'activity',
 };
@@ -101,7 +103,76 @@ function coerceValue(value: any): any {
 }
 
 const TEMPLATE_FINAL_STATUSES = ['Completed', 'Complete', 'Failed', 'Aborted', 'Verified', 'Closed', 'Archived'];
-const OPERATIONAL_ENTITIES = new Set(['inventory_item', 'finance_entry']);
+const OPERATIONAL_ENTITIES = new Set(['inventory_item', 'finance_entry', 'shopping_list_item']);
+
+/** Fields that feed the system-wide dropdown lists whenever a record is saved. */
+const OPTION_FIELDS: Record<string, Record<string, string>> = {
+  component: { category: 'component.category', manufacturer: 'manufacturer', supplier: 'supplier' },
+  sensor: { type: 'sensor.type', manufacturer: 'manufacturer' },
+  inventory_item: { category: 'inventory_item.category', unit: 'inventory_item.unit', supplier: 'supplier' },
+  shopping_list_item: { supplier: 'supplier', priority: 'shopping_list.priority', status: 'shopping_list.status' },
+  finance_entry: { category: 'finance_entry.category', counterparty: 'finance_entry.counterparty', payment_method: 'finance_entry.payment_method' },
+  test: { category: 'test.category' },
+  issue: { category: 'issue.category' },
+  project: { status: 'project.status', stage: 'project.stage' },
+  document: { kind: 'document.kind' },
+  config_snapshot: { kind: 'config_snapshot.kind' },
+  experiment: { status: 'experiment.status' },
+};
+
+export function registerOption(scopeKey: string, value: unknown): void {
+  const text = String(value ?? '').trim();
+  if (!scopeKey || !text) return;
+  getDb().run('INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at) VALUES (?, ?, ?, ?)', [newId(), scopeKey, text, nowIso()]);
+}
+
+/** Adds every chosen dropdown value (including template selections) to its shared list. */
+function registerRecordOptions(entity: string, row: Record<string, any>): void {
+  for (const [column, scope] of Object.entries(OPTION_FIELDS[entity] ?? {})) registerOption(scope, row[column]);
+  if (!isTemplateEntity(entity)) return;
+  const templateId = String(row.template_id ?? '').trim();
+  let template: any;
+  if (templateId) template = getDb().get<any>('SELECT * FROM entry_templates WHERE id = ?', [templateId]);
+  else if (usesDefaultTemplate(entity)) template = defaultTemplateRow(entity, String(row.project_id ?? ''));
+  if (!template) return;
+  const values = parseCustomValues(row.custom_json);
+  for (const field of normalizeTemplateFields(parseCustomValues(template.fields_json))) {
+    if (field.type === 'select') registerOption(templateScopeKey(entity, field.key), values[field.key]);
+  }
+}
+
+function registerTemplateOptions(row: Record<string, any>): void {
+  const appliesTo = String(row.applies_to ?? '').trim();
+  if (!appliesTo) return;
+  for (const field of normalizeTemplateFields(parseCustomValues(row.fields_json))) {
+    if (field.type !== 'select') continue;
+    const scope = templateScopeKey(appliesTo, field.key);
+    for (const option of field.options ?? []) registerOption(scope, option);
+    if (field.default !== undefined) registerOption(scope, field.default);
+  }
+}
+
+/** The most specific default field sheet for a record type (project first, then global). */
+function defaultTemplateRow(entity: string, projectId: string): any | undefined {
+  if (!usesDefaultTemplate(entity)) return undefined;
+  return getDb().get<any>(
+    `SELECT * FROM entry_templates
+     WHERE applies_to = ? AND archived = 0 AND (project_id = ? OR project_id = '')
+     ORDER BY CASE WHEN project_id = ? THEN 0 ELSE 1 END, is_default DESC, updated_at DESC LIMIT 1`,
+    [entity, projectId ?? '', projectId ?? ''],
+  );
+}
+
+/**
+ * Parses an entered number, keeps unreadable text so validation can report it, and
+ * only substitutes `emptyValue` when the field was left blank (undefined keeps the blank).
+ */
+function parseNumber(value: any, emptyValue: number | undefined): any {
+  if (value === null) return null;
+  if (typeof value === 'string' && value.trim() === '') return emptyValue === undefined ? value : emptyValue;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
+}
 
 /** Coerces the operational numeric/currency fields before validation and storage. */
 function normalizeOperationalInput(entity: string, data: Record<string, any>): Record<string, any> {
@@ -110,6 +181,18 @@ function normalizeOperationalInput(entity: string, data: Record<string, any>): R
     for (const key of ['quantity', 'unit_cost', 'reorder_level']) {
       if (next[key] !== undefined && next[key] !== null && next[key] !== '') next[key] = Number(next[key]);
     }
+    if (next.currency !== undefined) next.currency = normalizeCurrency(next.currency);
+    if (next.unit !== undefined) next.unit = String(next.unit ?? '').trim() || 'pcs';
+  }
+  if (entity === 'component') {
+    if (next.quantity !== undefined) next.quantity = parseNumber(next.quantity, 0);
+    if (next.unit_price !== undefined) next.unit_price = parseNumber(next.unit_price, 0);
+    if (next.currency !== undefined) next.currency = normalizeCurrency(next.currency);
+    if (next.unit !== undefined) next.unit = String(next.unit ?? '').trim() || 'pcs';
+  }
+  if (entity === 'shopping_list_item') {
+    if (next.quantity !== undefined) next.quantity = parseNumber(next.quantity, undefined);
+    if (next.estimated_unit_cost !== undefined) next.estimated_unit_cost = parseNumber(next.estimated_unit_cost, 0);
     if (next.currency !== undefined) next.currency = normalizeCurrency(next.currency);
     if (next.unit !== undefined) next.unit = String(next.unit ?? '').trim() || 'pcs';
   }
@@ -124,7 +207,12 @@ function normalizeOperationalInput(entity: string, data: Record<string, any>): R
 
 function assertOperationalRecord(entity: string, row: Record<string, any>): void {
   if (!OPERATIONAL_ENTITIES.has(entity)) return;
-  const errors = entity === 'inventory_item' ? validateInventoryItem(row) : validateFinanceEntry(row);
+  const errors =
+    entity === 'inventory_item'
+      ? validateInventoryItem(row)
+      : entity === 'shopping_list_item'
+        ? validateShoppingItem(row)
+        : validateFinanceEntry(row);
   if (errors.length) throw new Error(errors.join('; '));
 }
 
@@ -145,9 +233,18 @@ function parseCustomValues(value: any): Record<string, any> {
  */
 function assertTemplateValues(templateId: string, values: any, status: string): void {
   if (!templateId) return;
-  const row = getDb().get<any>('SELECT id, name, fields_json FROM entry_templates WHERE id = ?', [templateId]);
+  const row = getDb().get<any>('SELECT id, name, applies_to, fields_json FROM entry_templates WHERE id = ?', [templateId]);
   if (!row) return;
-  const fields = normalizeTemplateFields(parseCustomValues(row.fields_json) as any);
+  const fields = normalizeTemplateFields(parseCustomValues(row.fields_json) as any).map((field) => {
+    if (field.type !== 'select') return field;
+    const scope = templateScopeKey(String(row.applies_to ?? ''), field.key);
+    const registered = getDb()
+      .all<any>('SELECT value FROM option_values WHERE scope_key = ?', [scope])
+      .map((option) => String(option.value ?? ''))
+      .filter(Boolean);
+    if (registered.length === 0) return field;
+    return { ...field, options: [...new Set([...(field.options ?? []), ...registered])] };
+  });
   const errors = validateTemplateValues(
     TEMPLATE_FINAL_STATUSES.includes(status) ? fields : fields.map((f) => ({ ...f, required: false })),
     parseCustomValues(values),
@@ -292,6 +389,20 @@ export function createRecord(entity: string, data: Record<string, any>): any {
     if (row.amount === undefined || row.amount === null) row.amount = 0;
     if (!row.currency) row.currency = 'USD';
   }
+  if (entity === 'component') {
+    if (row.quantity === undefined || row.quantity === null) row.quantity = 1;
+    if (row.unit_price === undefined || row.unit_price === null) row.unit_price = 0;
+    if (!row.unit) row.unit = 'pcs';
+    if (!row.currency) row.currency = 'USD';
+  }
+  if (entity === 'shopping_list_item') {
+    if (row.quantity === undefined || row.quantity === null) row.quantity = 1;
+    if (row.estimated_unit_cost === undefined || row.estimated_unit_cost === null) row.estimated_unit_cost = 0;
+    if (!row.unit) row.unit = 'pcs';
+    if (!row.currency) row.currency = 'USD';
+    if (!row.priority) row.priority = 'Normal';
+    if (!row.status) row.status = 'Needed';
+  }
   assertOperationalRecord(entity, row);
 
   if (cols.has('name') && !row.name) {
@@ -305,6 +416,8 @@ export function createRecord(entity: string, data: Record<string, any>): any {
 
   const keys = Object.keys(row);
   db.run(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, keys.map((k) => row[k]));
+  registerRecordOptions(entity, row);
+  if (entity === 'entry_template') registerTemplateOptions(row);
 
   const projectId = row.project_id ?? (entity === 'project' ? id : '');
   if (entity === 'project') {
@@ -360,6 +473,8 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
     params.push(nowIso());
   }
   db.run(`UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [...params, id]);
+  registerRecordOptions(entity, { ...existing, ...input });
+  if (entity === 'entry_template') registerTemplateOptions({ ...existing, ...input });
 
   const projectId = existing.project_id ?? (entity === 'project' ? id : '');
   if (projectId) touchProject(projectId, db);
@@ -420,6 +535,7 @@ export function removeRecord(entity: string, id: string): RemoveResult {
       { table: 'entry_templates', column: 'project_id' },
       { table: 'inventory_items', column: 'project_id' },
       { table: 'finance_entries', column: 'project_id' },
+      { table: 'shopping_list_items', column: 'project_id' },
       { table: 'reports', column: 'project_id' },
       { table: 'activity', column: 'project_id' },
     ],
@@ -439,6 +555,7 @@ export function removeRecord(entity: string, id: string): RemoveResult {
       { table: 'component_usage', column: 'component_id' },
       { table: 'config_items', column: 'component_id' },
     ],
+    shopping_list_item: [],
   };
 
   const children = childDeletes[entity] ?? [];

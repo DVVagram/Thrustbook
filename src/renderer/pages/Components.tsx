@@ -22,8 +22,9 @@ import {
   Tabs,
   Textarea,
 } from '../ui';
-import { fmtDate, fmtDateTime, relativeTime } from '../format';
+import { fmtDate, fmtDateTime, money, quantity, relativeTime } from '../format';
 import { COMPONENT_CATEGORIES, CONFIG_KINDS } from '../../shared/constants';
+import { componentValue } from '../../shared/operations';
 
 export default function ComponentsPage() {
   const { projectId, project, notify, confirm, refresh, route, navigate } = useApp();
@@ -150,10 +151,24 @@ export default function ComponentsPage() {
             <Button icon="upload" onClick={importSnapshot}>
               Import config file
             </Button>
+            <Button icon="log" onClick={() => navigate('#/templates?entity=component&new=1')} title="Add fields shown on every component">
+              Component fields
+            </Button>
             <Button
               variant="primary"
               icon="plus"
-              onClick={() => setEditing({ __entity: 'component', project_id: projectId, category: 'Microcontroller' })}
+              onClick={() =>
+                setEditing({
+                  __entity: 'component',
+                  project_id: projectId,
+                  category: 'Microcontroller',
+                  quantity: 1,
+                  unit: 'pcs',
+                  unit_price: 0,
+                  currency: 'USD',
+                  supplier: '',
+                })
+              }
             >
               New component
             </Button>
@@ -177,7 +192,13 @@ export default function ComponentsPage() {
             title="Component inventory"
             actions={
               <div className="toolbar-inline">
-                <Select value={category} onChange={setCategory} placeholder="All categories" options={COMPONENT_CATEGORIES.map((c) => ({ value: c, label: c }))} />
+                <Select
+                  value={category}
+                  onChange={setCategory}
+                  placeholder="All categories"
+                  addNew="component.category"
+                  options={COMPONENT_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                />
                 <SearchInput value={search} onChange={setSearch} placeholder="Search components…" />
               </div>
             }
@@ -194,6 +215,23 @@ export default function ComponentsPage() {
                 { key: 'manufacturer', label: 'Manufacturer' },
                 { key: 'model', label: 'Model', mono: true },
                 { key: 'serial', label: 'Serial', mono: true },
+                { key: 'quantity', label: 'Qty', align: 'right', mono: true, sortValue: (c) => Number(c.quantity), render: (c) => `${quantity(c.quantity ?? 0)} ${c.unit || 'pcs'}` },
+                {
+                  key: 'unit_price',
+                  label: 'Unit price',
+                  align: 'right',
+                  mono: true,
+                  sortValue: (c) => Number(c.unit_price),
+                  render: (c) => money(c.unit_price ?? 0, c.currency || 'USD'),
+                },
+                {
+                  key: 'value',
+                  label: 'Piece value',
+                  align: 'right',
+                  mono: true,
+                  sortValue: (c) => componentValue(c),
+                  render: (c) => money(componentValue(c), c.currency || 'USD'),
+                },
                 { key: 'firmware', label: 'Firmware', mono: true },
                 { key: 'updated_at', label: 'Updated', render: (c) => fmtDate(c.updated_at), width: '110px' },
               ]}
@@ -227,6 +265,10 @@ export default function ComponentsPage() {
                       ['Manufacturer', selected.data.component.manufacturer],
                       ['Model', selected.data.component.model],
                       ['Serial', selected.data.component.serial],
+                      ['Quantity', `${quantity(selected.data.component.quantity ?? 0)} ${selected.data.component.unit || 'pcs'}`],
+                      ['Unit price', money(selected.data.component.unit_price ?? 0, selected.data.component.currency || 'USD')],
+                      ['Piece value', money(componentValue(selected.data.component), selected.data.component.currency || 'USD')],
+                      ['Supplier', selected.data.component.supplier],
                       ['Firmware', selected.data.component.firmware],
                       ['Installed in configurations', selected.data.configs.length],
                       ['Usage records', selected.data.usage.length],

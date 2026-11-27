@@ -117,6 +117,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   entry_template: 'Entry template',
   inventory_item: 'Inventory item',
   finance_entry: 'Finance entry',
+  shopping_list_item: 'Shopping list entry',
+  option_value: 'Dropdown option',
 };
 
 export const NAV_ITEMS: { key: string; label: string; group: string; icon: string }[] = [

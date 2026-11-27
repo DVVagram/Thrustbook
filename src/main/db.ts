@@ -576,6 +576,78 @@ CREATE INDEX IF NOT EXISTS idx_finance_project ON finance_entries(project_id, oc
 CREATE INDEX IF NOT EXISTS idx_finance_kind ON finance_entries(project_id, kind, occurred_on DESC);
 `,
   },
+  {
+    version: 5,
+    name: 'record field sets, global dropdown options and shopping list',
+    sql: `
+ALTER TABLE components ADD COLUMN quantity REAL DEFAULT 1;
+ALTER TABLE components ADD COLUMN unit TEXT DEFAULT 'pcs';
+ALTER TABLE components ADD COLUMN unit_price REAL DEFAULT 0;
+ALTER TABLE components ADD COLUMN currency TEXT DEFAULT 'USD';
+ALTER TABLE components ADD COLUMN supplier TEXT DEFAULT '';
+ALTER TABLE components ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE sensors ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE electronics_configs ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE projects ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE rockets ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE revisions ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE stages ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE campaigns ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE experiments ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE calibrations ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE documents ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE issues ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE notes ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE config_snapshots ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE inventory_items ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE inventory_items ADD COLUMN component_id TEXT DEFAULT '';
+ALTER TABLE finance_entries ADD COLUMN custom_json TEXT DEFAULT '{}';
+ALTER TABLE entry_templates ADD COLUMN is_default INTEGER DEFAULT 0;
+CREATE TABLE IF NOT EXISTS option_values (
+  id TEXT PRIMARY KEY,
+  scope_key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_option_values_unique ON option_values(scope_key, value);
+CREATE TABLE IF NOT EXISTS shopping_list_items (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  component_id TEXT DEFAULT '',
+  quantity REAL DEFAULT 1,
+  unit TEXT DEFAULT 'pcs',
+  estimated_unit_cost REAL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  supplier TEXT DEFAULT '',
+  priority TEXT DEFAULT 'Normal',
+  status TEXT DEFAULT 'Needed',
+  notes TEXT DEFAULT '',
+  custom_json TEXT DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_project ON shopping_list_items(project_id, status, name);
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'manufacturer', TRIM(manufacturer), datetime('now') FROM components WHERE TRIM(COALESCE(manufacturer,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'manufacturer', TRIM(manufacturer), datetime('now') FROM sensors WHERE TRIM(COALESCE(manufacturer,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'component.category', TRIM(category), datetime('now') FROM components WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'sensor.type', TRIM(type), datetime('now') FROM sensors WHERE TRIM(COALESCE(type,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'inventory_item.category', TRIM(category), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'inventory_item.unit', TRIM(unit), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(unit,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'supplier', TRIM(supplier), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(supplier,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'test.category', TRIM(category), datetime('now') FROM tests WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'finance_entry.category', TRIM(category), datetime('now') FROM finance_entries WHERE TRIM(COALESCE(category,'')) <> '';
+`,
+  },
 ];
 
 export interface Db {
