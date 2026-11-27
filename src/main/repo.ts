@@ -1,7 +1,15 @@
 import crypto from 'node:crypto';
 import { getDb, type Db } from './db';
 import { ENTITY_LABELS } from '../shared/constants';
-import { isTemplateEntity, normalizeTemplateFields, templateScopeKey, usesDefaultTemplate, validateTemplateValues } from '../shared/templates';
+import {
+  PER_RECORD_TEMPLATE_ENTITIES,
+  TEMPLATE_ENTITIES,
+  isTemplateEntity,
+  normalizeTemplateFields,
+  templateScopeKey,
+  usesDefaultTemplate,
+  validateTemplateValues,
+} from '../shared/templates';
 import { normalizeCurrency, validateFinanceEntry, validateInventoryItem, validateShoppingItem } from '../shared/operations';
 
 export const TABLES: Record<string, string> = {
@@ -118,6 +126,8 @@ const OPTION_FIELDS: Record<string, Record<string, string>> = {
   document: { kind: 'document.kind' },
   config_snapshot: { kind: 'config_snapshot.kind' },
   experiment: { status: 'experiment.status' },
+  stage: { status: 'stage.status' },
+  event: { category: 'event.category' },
 };
 
 export function registerOption(scopeKey: string, value: unknown): void {
@@ -149,6 +159,44 @@ function registerTemplateOptions(row: Record<string, any>): void {
     const scope = templateScopeKey(appliesTo, field.key);
     for (const option of field.options ?? []) registerOption(scope, option);
     if (field.default !== undefined) registerOption(scope, field.default);
+  }
+}
+
+/**
+ * Adds values that existing records already hold to the shared dropdown lists.
+ * A selection saved before its template's option list changed must still pass
+ * validation and appear in the dropdown, otherwise opening an older record and
+ * saving it would fail for data the application itself stored.
+ */
+export function seedStoredTemplateOptions(): void {
+  const db = getDb();
+  const templates = db.all<any>('SELECT * FROM entry_templates');
+  for (const template of templates) registerTemplateOptions(template);
+  const byId = new Map(templates.map((template) => [String(template.id), template]));
+  const defaultByProject = new Map<string, any>();
+
+  const registerRow = (entity: string, row: any) => {
+    let template = byId.get(String(row.template_id ?? ''));
+    if (!template && usesDefaultTemplate(entity)) {
+      const key = `${entity}:${row.project_id ?? ''}`;
+      if (!defaultByProject.has(key)) defaultByProject.set(key, defaultTemplateRow(entity, String(row.project_id ?? '')));
+      template = defaultByProject.get(key);
+    }
+    if (!template) return;
+    const values = parseCustomValues(row.custom_json);
+    for (const field of normalizeTemplateFields(parseCustomValues(template.fields_json))) {
+      if (field.type === 'select') registerOption(templateScopeKey(entity, field.key), values[field.key]);
+    }
+  };
+
+  for (const entity of PER_RECORD_TEMPLATE_ENTITIES) {
+    for (const row of db.all<any>(`SELECT template_id, project_id, custom_json FROM ${TABLES[entity]}`)) registerRow(entity, row);
+  }
+  for (const entity of TEMPLATE_ENTITIES.filter(usesDefaultTemplate)) {
+    const table = TABLES[entity];
+    if (!table) continue;
+    // These tables use one shared field set, so they have no template_id column.
+    for (const row of db.all<any>(`SELECT project_id, custom_json FROM ${table}`)) registerRow(entity, row);
   }
 }
 

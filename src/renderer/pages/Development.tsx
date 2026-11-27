@@ -125,6 +125,7 @@ export default function DevelopmentPage() {
                         value={stage.status}
                         onChange={(v) => void setStageStatus(stage, v)}
                         options={STAGE_STATUSES.map((s) => ({ value: s, label: s }))}
+                        addNew="stage.status"
                       />
                       <Button size="sm" icon="log" onClick={() => navigate(`#/datalog?stage=${stage.id}`)}>History</Button>
                     </div>

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { app, BrowserWindow, Menu, shell, session } from 'electron';
 import { getSetting, closeDatabase, openDatabase, schemaVersion } from './db';
+import { seedStoredTemplateOptions } from './repo';
 import { ensureStorage, dataDir, workspaceMode } from './paths';
 import { ensureExamplesWorkspace } from './examples';
 import { migrateLegacyUserData } from './migrate';
@@ -218,6 +219,12 @@ if (!gotLock) {
     ensureStorage();
     try {
       openDatabase();
+      try {
+        seedStoredTemplateOptions();
+      } catch (err) {
+        // Seeding dropdown suggestions must never stop the application from opening.
+        console.error('Stored option seeding failed', err);
+      }
       console.log(`Storage: ${dataDir()} · schema v${schemaVersion()} · workspace ${workspaceMode()}`);
       await ensureExamplesWorkspace();
     } catch (err) {

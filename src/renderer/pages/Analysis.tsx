@@ -633,7 +633,12 @@ export default function AnalysisPage() {
                     <Input value={eventDraft.name ?? ''} onChange={(e) => setEventDraft((d: any) => ({ ...d, name: e.target.value }))} placeholder="e.g. Motor burnout" />
                   </Field>
                   <Field label="Category">
-                    <Select value={eventDraft.category ?? 'Custom'} onChange={(v) => setEventDraft((d: any) => ({ ...d, category: v }))} options={EVENT_CATEGORIES.map((c) => ({ value: c, label: c }))} />
+                    <Select
+                      value={eventDraft.category ?? 'Custom'}
+                      onChange={(v) => setEventDraft((d: any) => ({ ...d, category: v }))}
+                      options={EVENT_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                      addNew="event.category"
+                    />
                   </Field>
                   <Field label="Time [s]">
                     <Input type="number" step="any" value={eventDraft.t ?? 0} onChange={(e) => setEventDraft((d: any) => ({ ...d, t: Number(e.target.value) }))} />

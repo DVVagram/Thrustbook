@@ -192,7 +192,12 @@ export default function ProjectsPage() {
                 <Input value={draft.code ?? ''} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="e.g. KST-01" />
               </Field>
               <Field label="Status">
-                <Select value={draft.status ?? 'Planning'} onChange={(v) => setDraft({ ...draft, status: v })} options={PROJECT_STATUSES.map((s) => ({ value: s, label: s }))} />
+                <Select
+                  value={draft.status ?? 'Planning'}
+                  onChange={(v) => setDraft({ ...draft, status: v })}
+                  options={PROJECT_STATUSES.map((s) => ({ value: s, label: s }))}
+                  addNew="project.status"
+                />
               </Field>
               <Field label="Rocket name" hint="Creates the first rocket record">
                 <Input value={draft.rocketName ?? ''} onChange={(e) => setDraft({ ...draft, rocketName: e.target.value })} placeholder="e.g. Kestrel K1" />
