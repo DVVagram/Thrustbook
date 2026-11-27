@@ -541,7 +541,9 @@ export default function ComponentsPage() {
           footer={
             <>
               <Button onClick={() => setEditing(null)}>Cancel</Button>
-              <Button variant="primary" onClick={() => saveComponent('component', editing)}>Save component</Button>
+              <Button variant="primary" onClick={() => saveComponent('component', editing)} disabled={!String(editing.name ?? '').trim()}>
+                Save component
+              </Button>
             </>
           }
         >

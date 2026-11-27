@@ -449,6 +449,9 @@ export function updateRecord(entity: string, id: string, patch: Record<string, a
   const existing = db.get<any>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
   if (!existing) throw new Error(`${ENTITY_LABELS[entity] ?? entity} not found`);
   const input = normalizeOperationalInput(entity, patch);
+  if (cols.has('name') && input.name !== undefined && !String(input.name ?? '').trim()) {
+    throw new Error('Name is required');
+  }
 
   const keys: string[] = [];
   const params: any[] = [];
@@ -569,6 +572,7 @@ export function removeRecord(entity: string, id: string): RemoveResult {
   const children = childDeletes[entity] ?? [];
   db.transaction(() => {
     for (const ref of childNulls[entity] ?? []) {
+      if (!columnsFor(ref.table).has(ref.column)) continue;
       db.run(`UPDATE ${ref.table} SET ${ref.column} = '' WHERE ${ref.column} = ?`, [id]);
     }
     for (const child of children) {

@@ -650,6 +650,160 @@ INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
   },
 ];
 
+/**
+ * The schema this build needs, independent of the recorded user_version.
+ *
+ * A database can carry a version number written by another build (for example a
+ * branch whose migration 5 covers different tables), or a migration can stop
+ * halfway. In both cases user_version is not proof that the columns exist, so
+ * startup verifies and repairs them instead of trusting the number.
+ */
+const REQUIRED_SCHEMA: { table: string; columns: [name: string, definition: string][] }[] = [
+  { table: 'channels', columns: [['calibration', "TEXT DEFAULT ''"], ['source_desc', "TEXT DEFAULT ''"]] },
+  {
+    table: 'datasets',
+    columns: [
+      ['import_spec_json', "TEXT DEFAULT '{}'"],
+      ['row_count_raw', 'INTEGER DEFAULT 0'],
+      ['quality_status', "TEXT DEFAULT 'ok'"],
+    ],
+  },
+  { table: 'tests', columns: [['template_id', "TEXT DEFAULT ''"]] },
+  { table: 'flights', columns: [['template_id', "TEXT DEFAULT ''"]] },
+  { table: 'runs', columns: [['custom_json', "TEXT DEFAULT '{}'"], ['template_id', "TEXT DEFAULT ''"]] },
+  {
+    table: 'components',
+    columns: [
+      ['quantity', 'REAL DEFAULT 1'],
+      ['unit', "TEXT DEFAULT 'pcs'"],
+      ['unit_price', 'REAL DEFAULT 0'],
+      ['currency', "TEXT DEFAULT 'USD'"],
+      ['supplier', "TEXT DEFAULT ''"],
+      ['custom_json', "TEXT DEFAULT '{}'"],
+    ],
+  },
+  { table: 'sensors', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'electronics_configs', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'projects', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'rockets', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'revisions', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'stages', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'campaigns', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'experiments', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'calibrations', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'documents', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'issues', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'notes', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'config_snapshots', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'inventory_items', columns: [['custom_json', "TEXT DEFAULT '{}'"], ['component_id', "TEXT DEFAULT ''"]] },
+  { table: 'finance_entries', columns: [['custom_json', "TEXT DEFAULT '{}'"]] },
+  { table: 'entry_templates', columns: [['is_default', 'INTEGER DEFAULT 0']] },
+];
+
+/** Tables and indexes this build needs in addition to the base schema. */
+const REQUIRED_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS entry_templates (
+  id TEXT PRIMARY KEY,
+  project_id TEXT DEFAULT '',
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  applies_to TEXT NOT NULL DEFAULT 'test',
+  category TEXT DEFAULT '',
+  fields_json TEXT DEFAULT '[]',
+  is_default INTEGER DEFAULT 0,
+  archived INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entry_templates_target ON entry_templates(applies_to, project_id);
+CREATE TABLE IF NOT EXISTS option_values (
+  id TEXT PRIMARY KEY,
+  scope_key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_option_values_unique ON option_values(scope_key, value);
+CREATE TABLE IF NOT EXISTS shopping_list_items (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  component_id TEXT DEFAULT '',
+  quantity REAL DEFAULT 1,
+  unit TEXT DEFAULT 'pcs',
+  estimated_unit_cost REAL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  supplier TEXT DEFAULT '',
+  priority TEXT DEFAULT 'Normal',
+  status TEXT DEFAULT 'Needed',
+  notes TEXT DEFAULT '',
+  custom_json TEXT DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_project ON shopping_list_items(project_id, status, name);
+`;
+
+/** Seeds the shared dropdown list from values that already exist in records. */
+const OPTION_BACKFILL_SQL = `
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'manufacturer', TRIM(manufacturer), datetime('now') FROM components WHERE TRIM(COALESCE(manufacturer,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'manufacturer', TRIM(manufacturer), datetime('now') FROM sensors WHERE TRIM(COALESCE(manufacturer,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'component.category', TRIM(category), datetime('now') FROM components WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'sensor.type', TRIM(type), datetime('now') FROM sensors WHERE TRIM(COALESCE(type,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'inventory_item.category', TRIM(category), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'inventory_item.unit', TRIM(unit), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(unit,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'supplier', TRIM(supplier), datetime('now') FROM inventory_items WHERE TRIM(COALESCE(supplier,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'test.category', TRIM(category), datetime('now') FROM tests WHERE TRIM(COALESCE(category,'')) <> '';
+INSERT OR IGNORE INTO option_values (id, scope_key, value, created_at)
+  SELECT lower(hex(randomblob(16))), 'finance_entry.category', TRIM(category), datetime('now') FROM finance_entries WHERE TRIM(COALESCE(category,'')) <> '';
+`;
+
+/**
+ * Adds anything REQUIRED_SCHEMA lists that the database does not have yet, and
+ * seeds the shared dropdown list when it is created or empty. Returns what was
+ * added so startup can log the repair, and any required table that is missing.
+ */
+function reconcileSchema(database: Db): { added: string[]; missing: string[] } {
+  const raw = database.raw;
+  const added: string[] = [];
+  const missing: string[] = [];
+  const tableNames = () =>
+    new Set(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row: any) => String(row.name)));
+
+  const before = tableNames();
+  raw.exec(REQUIRED_TABLES_SQL);
+  const tables = tableNames();
+  for (const table of ['entry_templates', 'option_values', 'shopping_list_items']) {
+    if (!before.has(table) && tables.has(table)) added.push(`table ${table}`);
+  }
+
+  for (const { table, columns } of REQUIRED_SCHEMA) {
+    if (!tables.has(table)) {
+      missing.push(table);
+      continue;
+    }
+    const present = new Set(raw.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => String(column.name)));
+    for (const [name, definition] of columns) {
+      if (present.has(name)) continue;
+      raw.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+      added.push(`${table}.${name}`);
+    }
+  }
+
+  if (missing.length === 0) {
+    const empty = Number((raw.prepare('SELECT COUNT(*) AS c FROM option_values').get() as any)?.c ?? 0) === 0;
+    if (added.length > 0 || empty) raw.exec(OPTION_BACKFILL_SQL);
+  }
+  return { added, missing };
+}
+
 export interface Db {
   raw: DatabaseSync;
   all<T = any>(sql: string, params?: SqlParam[]): T[];
@@ -729,10 +883,20 @@ export function openDatabase(): Db {
         wrapper.version = migration.version;
         console.log(`Database migrated to v${migration.version} (${migration.name})`);
       } catch (err) {
-        console.error(`Migration v${migration.version} failed`, err);
-        throw err;
+        console.error(`Migration v${migration.version} failed; verifying the schema instead`, err);
+        break;
       }
     }
+  }
+
+  const repair = wrapper.transaction(() => reconcileSchema(wrapper));
+  if (repair.added.length > 0) console.log(`Schema repaired (${repair.added.length} item(s)): ${repair.added.join(', ')}`);
+  if (repair.missing.length > 0) throw new Error(`Database is missing required tables: ${repair.missing.join(', ')}`);
+  const latestVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
+  if (wrapper.version < latestVersion) {
+    raw.exec(`PRAGMA user_version = ${latestVersion}`);
+    wrapper.version = latestVersion;
+    console.log(`Database schema version updated to v${latestVersion}`);
   }
 
   seedDefaults(wrapper);
